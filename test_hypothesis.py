@@ -1,15 +1,15 @@
 from hypothesis import given
 from strategies import *
 
-from mpack import Packer, Unpacker
+import mpack
 
 
-@given(fixmap(keys=all_scalar, values=all_scalar))
-def packer_correct(x):
+@given(all_types)
+def test_pack_unpack(x):
     packed_obj, obj = x
-    unpack = Unpacker()
-    pack = Packer()
-    assert pack(obj) == packed_obj
-    assert unpack(packed_obj) == obj
-
-packer_correct()
+    unpacker = mpack.Unpacker()
+    print("unpacking %r..." % packed_obj)
+    unpacked_obj, n = unpacker(packed_obj)
+    assert n == len(packed_obj)
+    print("comparing...")
+    assert unpacked_obj == obj

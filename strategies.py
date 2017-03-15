@@ -7,49 +7,87 @@ then return the packed representation tupled with the original value.
 
 from hypothesis.strategies import (none, booleans, integers, lists,
         dictionaries, recursive, one_of, text, binary)
+from hypothesis.searchstrategy import SearchStrategy
+import numpy
 
+
+class StrategyProxy(SearchStrategy):
+    def __init__(self, st):
+        self.__st = st
+
+    def __getattr__(self, name):
+        return getattr(self.__st, name)
+
+    def do_draw(self, *args, **kwargs):
+        return self.__st.do_draw(*args, **kwargs)
+
+    def __or__(self, other):
+        return one_of(self, other)
+
+    def __repr__(self):
+        return repr(self.__st)
+
+class StrategyAlias(StrategyProxy):
+    def __init__(self, name, *args, **kwargs):
+        self.__name = name
+        super(StrategyAlias, self).__init__(*args, **kwargs)
+
+    def __repr__(self):
+        return self.__name
 
 _all_scalar = []
 
-def _scalar_st(source, pack):
-    """helper to make a strategy for a non-recursive format.
-
-    Also auto-collects it into `all_scalar` (which see).
-    """
-    st = source.map(lambda v: (pack(v), v))
+def _scalar_st(name, source, pack, postpack=lambda v: v):
+    st = StrategyAlias(u"mpack.%s" % name,
+            source.map(lambda v: (pack(v), postpack(v))))
     _all_scalar.append(st)
-    return st
+    globals()[name] = st
 
-nil = _scalar_st(
-        source=none(),
-        pack=lambda v: b"\xc0")
-bool = _scalar_st(
-        source=booleans(),
-        pack=lambda v: b"\xc3" if v else b"\xc2")
-positive_fixnum = _scalar_st(
-        source=integers(0, 127),
-        pack=lambda v: b"%c" % v)
-negative_fixnum = _scalar_st(
-        source=integers(-32, -1),
-        pack=lambda v: b"%c" % (v + 256 | 0xe0))
+_scalar_st(u"nil", none(), lambda v: b"\xc0")
+_scalar_st(u"bool", booleans(), lambda v: b"%c" % (0xc2 + v))
+_scalar_st(u"positive_fixnum", integers(0, 127),
+        lambda v: b"%c" % v)
+_scalar_st(u"negative_fixnum", integers(-32, -1),
+        lambda v: b"%c" % (v + 256 | 0xe0))
 
-
-def _num_st(firstbyte, dtype):
+def _num_st(name, firstbyte, dtype, postpack=lambda x: x):
     from hypothesis.extra.numpy import arrays
-    return _scalar_st(
-            source=arrays(dtype, ()),
-            pack=lambda v: b"%c%s" % (firstbyte, v.tobytes()))
+    # arrays(dtype, ()) yields integer without endianess metadata
+    _scalar_st(name, arrays(dtype, 1),
+            pack=lambda v: b"%c%s" % (firstbyte, v.tobytes()),
+            postpack=lambda v: postpack(v[0]))
 
-uint8, uint16, uint32, uint64 = (
-        _num_st(0xcc + i, ">u%s" % 2**i) for i in range(4))
-int8, int16, int32, int64 = (
-        _num_st(0xd0 + i, ">i%s" % 2**i) for i in range(4))
-float32, float64 = (
-        _num_st(0xca + i, ">f%s" % 2**i) for i in range(2, 4))
+for i in range(4):
+    _num_st(u"int%d" % (8 * 2**i), 0xd0 + i, ">i%d" % 2**i)
+    _num_st(u"uint%d" % (8 * 2**i), 0xcc + i, ">u%d" % 2**i)
+
+class _Nan(object):
+    """It's equal to this number that's not even equal to itself.
+
+    This greatly simplifies things downstream.
+    """
+    def __eq__(self, other):
+        if not numpy.isreal(other):
+            return NotImplemented
+        return numpy.isnan(other)
+
+    def __ne__(self, other):
+        if not numpy.isreal(other):
+            return NotImplemented
+        return not numpy.isnan(other)
+
+    def __hash__(self):
+        return hash(numpy.nan)
+
+_nan = _Nan()
+def _float_postpack(v):
+    return _nan if numpy.isnan(v) else v
+
+_num_st(u"float32", 0xca, ">f4", postpack=_float_postpack)
+_num_st(u"float64", 0xcb, ">f8", postpack=_float_postpack)
 
 
 def _int_tobytes(v, nbytes):
-    import numpy
     return numpy.array(v, ">u%d" % nbytes).tobytes()
 
 def _pack_bin(firstbyte, nbytes_len):
@@ -58,10 +96,9 @@ def _pack_bin(firstbyte, nbytes_len):
         return b"%c%s%s" % (firstbyte, _len, v)
     return pack
 
-bin8, bin16, bin32 = (_scalar_st(
-        source=binary(max_size=2**(8 * 2**i) - 1),
-        pack=_pack_bin(0xc4 + i, 2**i))
-    for i in range(3))
+for i in range(3):
+    _scalar_st(u"bin%d" % (8 * 2**i), binary(max_size=2**(8 * 2**i) - 1, average_size=20),
+            pack=_pack_bin(0xc4 + i, 2**i))
 
 
 def _text(max_size):
@@ -71,11 +108,9 @@ def _text(max_size):
     can't go over a certain number of *bytes*, so this wrapper makes up for it.
     `text` is used internally as an approximate.
     """
-    return text(max_size=max_size).filter(
-            lambda v: len(v.encode()) <= max_size)
+    return text(max_size=max_size, average_size=20).filter(lambda v: len(v.encode()) <= max_size)
 
-fixstr = _scalar_st(
-        source=_text(max_size=31),
+_scalar_st(u"fixstr", _text(max_size=31),
         pack=lambda v: (b"%c%s" % (0xa0 | len(v.encode()), v.encode())))
 
 def _pack_str(i):
@@ -84,16 +119,12 @@ def _pack_str(i):
         return pack2(v.encode())
     return pack
 
-str8, str16, str32 = (_scalar_st(
-        source=_text(max_size=2**(8 * 2**i) - 1),
-        pack=_pack_str(i))
-    for i in range(3))
+for i in range(3):
+    _scalar_st(u"str%d" % (8 * 2**i), _text(max_size=2**(8 * 2**i) - 1),
+            pack=_pack_str(i))
 
 
-all_scalar = one_of(*_all_scalar)
-"""aggregate of all non-recursive strategies"""
-
-del _all_scalar  # just to be safe
+all_scalar = one_of(_all_scalar)
 
 
 def _concat_elements(l):
@@ -103,68 +134,133 @@ def _concat_elements(l):
         packed_vs, vs = zip(*l)
         return b"".join(packed_vs), list(vs)
 
-def _lists(_max_size):
-    """`hypothesis.strategies.lists`-like strategy factory.
 
-    `_max_size` is the physical maximum element count for the MessagePack
-    container and will be used to cap the passed `max_size`.
-    """
-    def st(elements=all_scalar, *, max_size=_max_size, **kwargs):
-        max_size = min(max_size, _max_size)
-        source = lists(elements, max_size=max_size, **kwargs)
-        return source.map(_concat_elements)
-    return st
+class StrategyWrapper(StrategyAlias):
+    def __init__(self, params, *args, **kwargs):
+        self.__params = params.copy()
+        source = self._from_params(params)
+        super(StrategyWrapper, self).__init__(st=self._make_st(source), *args, **kwargs)
 
-def fixarray(*args, **kwargs):
-    source = _lists(_max_size=15)(*args, **kwargs)
-    return source.map(lambda packed_vs, vs:
-            b"%c%s" % (0x90 | len(vs), packed_vs))
+    def with_params(self, **kwargs):
+        if not kwargs:
+            return self
+        params = self.__params.copy()
+        params.update(kwargs)
+        return type(self)(params)
 
-def _array_st(i):
-    def st(*args, **kwargs):
-        source = _lists(_max_size=2**(8 * 2**i) - 1)(*args, **kwargs)
-        return source.map(lambda packed_vs, vs:
-                b"%c%s%s" % (0xdc + i, _int_tobytes(len(vs), 2**i), packed_vs))
-    return st
+    def with_source(self, source):
+        name = u"%s.with_source(%s)" % (self, source)
+        st = self._make_st(self._from_alternate_source(source))
+        return StrategyAlias(name, st)
 
-array16, array32 = (_array_st(i) for i in (1, 2))
+    def __repr__(self):
+        name = super(StrategyWrapper, self).__repr__()
+        params = self.__params
+        if params:
+            return u"%s.with_params(%s)" % (name, ", ".join(u"%s=%s" % i for i in sorted(params.items())))
+        else:
+            return name
 
-def all_arrays(*args, **kwargs):
-    return one_of(a(*args, **kwargs) for a in (fixarray, array16, array32))
+_all_arrays = []
+def _array_st(name, max_size, pack, postpack=lambda x: x):
+    def pack2(l):
+        packed_l, l = _concat_elements(l)
+        return pack(packed_l, l), postpack(l)
+
+    class st(StrategyWrapper):
+        def __init__(self, params):
+            super(st, self).__init__(params=params, name=name)
+
+        @staticmethod
+        def _make_st(source):
+            return source.map(pack2)
+
+        @staticmethod
+        def _from_params(params):
+            try:
+                params["max_size"] = min(params["max_size"], max_size)
+            except KeyError:
+                params["max_size"] = max_size
+            params.setdefault("elements", all_scalar)
+            return lists(**params)
+
+        @staticmethod
+        def _from_alternate_source(source):
+            return source.filter(lambda l: len(l) <= max_size)
+
+    singleton = st(params={"average_size": min(20, max_size)})
+    _all_arrays.append(singleton)
+    globals()[name] = singleton
+
+_array_st(u"fixarray",
+        max_size=15,
+        pack=lambda packed_l, l: b"%c%s" % (0x90 | len(l), packed_l))
+
+def _pack_array(firstbyte, nbytes_len):
+    def pack(packed_l, l):
+        _len = _int_tobytes(len(l), nbytes_len)
+        return b"%c%s%s" % (firstbyte, _len, packed_l)
+    return pack
+
+_array_st(u"array16", max_size=2**16 - 1, pack=_pack_array(0xdc, 2))
+_array_st(u"array32", max_size=2**32 - 1, pack=_pack_array(0xdd, 4))
+
+all_arrays = one_of(_all_arrays)
+
+all_hashable_types = recursive(
+        base=all_scalar,
+        extend=lambda S: one_of(a.with_params(elements=S) for a in _all_arrays), max_leaves=5)
 
 
 def _concat_items(d):
     packed_items, items = _concat_elements(
             [(packed_key + packed_val, (key, val))
-                for (packed_key, key), (packed_val, val) in v.items()])
+                for (packed_key, key), (packed_val, val) in d.items()])
     return packed_items, dict(items)
 
-def _dictionaries(_max_size):
-    """`_lists`, mutatis mutandis"""
-    def st(keys=all_scalar, values=all_scalar, *, max_size=_max_size, **kwargs):
-        max_size = min(max_size, _max_size)
-        source = dictionaries(keys, values, max_size=max_size, **kwargs)
-        return source.map(_concat_elements)
-    return st
 
-def fixmap(*args, **kwargs):
-    source = _dictionaries(_max_size=15)(*args, **kwargs)
-    return source.map(lambda packed_d, d:
-            b"%c%s" % (0x80 | len(d), packed_d))
+_all_maps = []
+def _map_st(name, max_size, pack, postpack=lambda x: x):
+    def pack2(l):
+        packed_d, d = _concat_items(l)
+        return pack(packed_d, d), postpack(d)
 
-def _map_st(i):
-    def st(*args, **kwargs):
-        source = _dictionaries(_max_size=2**(8 * 2**i) - 1)(*args, **kwargs)
-        return source.map(lambda packed_d, d:
-                b"%c%s%s" % (0xde + i, _int_tobytes(len(d), 2**i), packed_d))
-    return st
+    class st(StrategyWrapper):
+        def __init__(self, params):
+            super(st, self).__init__(params=params, name=name)
 
-map16, map32 = (_map_st(i) for i in (1, 2))
+        @staticmethod
+        def _make_st(source):
+            return source.map(pack2)
 
-def all_maps(*args, **kwargs):
-    return one_of(m(*args, **kwargs) for m in (fixmap, map16, map32))
+        @staticmethod
+        def _from_params(params):
+            try:
+                params["max_size"] = min(params["max_size"], max_size)
+            except KeyError:
+                params["max_size"] = max_size
+            params.setdefault("keys", all_scalar)
+            params.setdefault("values", all_scalar)
+            return dictionaries(**params)
+
+        @staticmethod
+        def _from_alternate_source(source):
+            return source.filter(lambda d: len(d) <= max_size)
+
+    singleton = st(params={"average_size": min(20, max_size)})
+    _all_maps.append(singleton)
+    globals()[name] = singleton
+
+_map_st(u"fixmap",
+        max_size=15,
+        pack=lambda packed_d, d: b"%c%s" % (0x80 | len(d), packed_d))
 
 
-all_types = recursive(all_scalar, lambda s:
-        fixarray(s) | array16(s) | array32(s) |
-        fixmap(all_scalar, s) | map16(all_scalar, s) | map32(all_scalar, s))
+_pack_map = _pack_array
+_map_st(u"map16", max_size=2**16 - 1, pack=_pack_map(0xde, 2))
+_map_st(u"map32", max_size=2**32 - 1, pack=_pack_map(0xdf, 4))
+
+all_maps = one_of(_all_maps)
+all_types = recursive(
+        base=all_hashable_types,
+        extend=lambda S: one_of(m.with_params(values=S) for m in _all_maps), max_leaves=5)
