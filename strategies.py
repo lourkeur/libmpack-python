@@ -108,15 +108,15 @@ def _text(max_size):
     can't go over a certain number of *bytes*, so this wrapper makes up for it.
     `text` is used internally as an approximate.
     """
-    return text(max_size=max_size, average_size=20).filter(lambda v: len(v.encode()) <= max_size)
+    return text(max_size=max_size, average_size=20).filter(lambda v: len(v.encode("utf-8")) <= max_size)
 
 _scalar_st(u"fixstr", _text(max_size=31),
-        pack=lambda v: (b"%c%s" % (0xa0 | len(v.encode()), v.encode())))
+        pack=lambda v: (b"%c%s" % (0xa0 | len(v.encode("utf-8")), v.encode("utf-8"))))
 
 def _pack_str(i):
     pack2 = _pack_bin(0xd9 + i, 2**i)
     def pack(v):
-        return pack2(v.encode())
+        return pack2(v.encode("utf-8"))
     return pack
 
 for i in range(3):
