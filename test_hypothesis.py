@@ -15,3 +15,8 @@ class TestMpack(unittest.TestCase):
         self.assertEqual(n, len(packed_obj))
         print("comparing...")
         self.assertEqual(unpacked_obj, obj)
+
+    @unittest.skip("hangs and requires the process to be killed manually")
+    def test_unpacking_c1(self):
+        u = mpack.Unpacker()
+        u(b"\xc1")
