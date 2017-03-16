@@ -167,7 +167,7 @@ def str32(draw, **kwargs):
     return _do_bin(draw, ">u4", 0xdb, kwargs, _str_prepack(">u4"))
 
 
-scalar_formats = one_of(
+all_scalar = one_of(
         nil(),
         bool(),
         positive_fixnum(),
@@ -192,15 +192,83 @@ scalar_formats = one_of(
         )
 
 
+class _Sequence(tuple):
+    """mpack yields lists, but we don't wan't to yield those because they are not hashable."""
+    def __eq__(self, other):
+        try:
+            other = tuple(other)
+        except TypeError:
+            return NotImplemented
+        return super(_Sequence, self).__eq__(other)
+
+    def __ne__(self, other):
+        try:
+            other = tuple(other)
+        except TypeError:
+            return NotImplemented
+        return super(_Sequence, self).__ne__(other)
+
+    def __hash__(self):
+        return super(_Sequence, self).__hash__()
+
 def _concat_elements(l):
     packed_vs, vs = bytearray(), []
-    for pv, v in l:
-        packed_vs += pv
+    for packed_v, v in l:
+        packed_vs += packed_v
         vs.append(v)
-    return bytes(packed_vs), vs
+    return bytes(packed_vs), _Sequence(vs)
+
+
+@composite
+def fixarray(draw, lists=lists, **kwargs):
+    _limit_size(15, kwargs)
+    kwargs.setdefault("elements", all_scalar)
+    l = draw(lists(**kwargs))
+    data, v = _concat_elements(l)
+    return b"%c%s" % (0x90 | len(v), data), v
+
+def _do_array(draw, dtype, firstbyte, kwargs):
+    _limit_size(_num_max(dtype), kwargs)
+    kwargs.setdefault("elements", all_scalar)
+    l = draw(kwargs.pop("lists", lists)(**kwargs))
+    data, v = _concat_elements(l)
+    return b"%c%s%s" % (firstbyte, _num_tobytes(dtype, len(v)), data), v
+
+@composite
+def array16(draw, **kwargs):
+    return _do_array(draw, ">u2", 0xdc, kwargs)
+@composite
+def array32(draw, **kwargs):
+    return _do_array(draw, ">u4", 0xdd, kwargs)
+
 
 def _concat_items(d):
     packed_items, items = _concat_elements(
             (packed_key + packed_val, (key, val))
                 for (packed_key, key), (packed_val, val) in d.items())
-    return packed_items, items
+    return packed_items, dict(items)
+
+
+@composite
+def fixmap(draw, dictionaries=dictionaries, **kwargs):
+    _limit_size(15, kwargs)
+    kwargs.setdefault("keys", all_scalar)
+    kwargs.setdefault("values", all_scalar)
+    d = draw(dictionaries(**kwargs))
+    data, v = _concat_items(d)
+    return b"%c%s" % (0x80 | len(v), data), v
+
+def _do_map(draw, dtype, firstbyte, kwargs):
+    _limit_size(_num_max(dtype), kwargs)
+    kwargs.setdefault("keys", all_scalar)
+    kwargs.setdefault("values", all_scalar)
+    d = draw(kwargs.pop("dictionaries", dictionaries)(**kwargs))
+    data, v = _concat_items(d)
+    return b"%c%s%s" % (firstbyte, _num_tobytes(dtype, len(v)), data), v
+
+@composite
+def map16(draw, **kwargs):
+    return _do_map(draw, ">u2", 0xde, kwargs)
+@composite
+def map32(draw, **kwargs):
+    return _do_map(draw, ">u4", 0xdf, kwargs)
