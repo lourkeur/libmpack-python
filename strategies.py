@@ -7,17 +7,16 @@ then return the packed representation tupled with the original value.
 
 from hypothesis.strategies import (assume, composite, none, booleans, integers, lists,
         dictionaries, recursive, one_of, text, binary)
-from hypothesis.searchstrategy import SearchStrategy
 import numpy
 
 
 @composite
-def nil(draw):
+def nil(draw, none=none):
     draw(none())
     return b"\xc0", None
 
 @composite
-def bool(draw):
+def bool(draw, booleans=booleans):
     v = draw(booleans())
     return b"%c" % (0xc2 + v), v
 
@@ -33,13 +32,13 @@ def _limit_values(min_value, max_value, kwargs):
         kwargs["max_value"] = max_value
 
 @composite
-def positive_fixnum(draw, **kwargs):
+def positive_fixnum(draw, integers=integers, **kwargs):
     _limit_values(0, 127, kwargs)
     v = draw(integers(**kwargs))
     return b"%c" % v, v
 
 @composite
-def negative_fixnum(draw, **kwargs):
+def negative_fixnum(draw, integers=integers, **kwargs):
     _limit_values(-32, -1, kwargs)
     v = draw(integers(**kwargs))
     return b"%c" % (v + 256 | 0xe0), v
@@ -47,36 +46,41 @@ def negative_fixnum(draw, **kwargs):
 def _num_tobytes(dtype, v):
     return numpy.array(v, dtype).tobytes()
 
-def _do_num(draw, dtype, firstbyte, postpack=lambda v: v):
+def _num_max(dtype):
+    return numpy.iinfo(dtype).max
+
+def _do_num(draw, dtype, firstbyte, kwargs, postpack=lambda v: v):
     from hypothesis.extra.numpy import arrays
+    if "min_value" in kwargs or "max_value" in kwargs:
+        raise NotImplementedError("custom limits")
     v = draw(arrays(dtype, ()))
     return b"%c%s" % (firstbyte, _num_tobytes(dtype, v)), postpack(v)
 
 @composite
-def uint8(draw):
-    return _do_num(draw, ">u1", 0xcc)
+def uint8(draw, **kwargs):
+    return _do_num(draw, ">u1", 0xcc, kwargs)
 @composite
-def uint16(draw):
-    return _do_num(draw, ">u2", 0xcd)
+def uint16(draw, **kwargs):
+    return _do_num(draw, ">u2", 0xcd, kwargs)
 @composite
-def uint32(draw):
-    return _do_num(draw, ">u4", 0xce)
+def uint32(draw, **kwargs):
+    return _do_num(draw, ">u4", 0xce, kwargs)
 @composite
-def uint64(draw):
-    return _do_num(draw, ">u8", 0xcf)
+def uint64(draw, **kwargs):
+    return _do_num(draw, ">u8", 0xcf, kwargs)
 
 @composite
-def int8(draw):
-    return _do_num(draw, ">i1", 0xd0)
+def int8(draw, **kwargs):
+    return _do_num(draw, ">i1", 0xd0, kwargs)
 @composite
-def int16(draw):
-    return _do_num(draw, ">i2", 0xd1)
+def int16(draw, **kwargs):
+    return _do_num(draw, ">i2", 0xd1, kwargs)
 @composite
-def int32(draw):
-    return _do_num(draw, ">i4", 0xd2)
+def int32(draw, **kwargs):
+    return _do_num(draw, ">i4", 0xd2, kwargs)
 @composite
-def int64(draw):
-    return _do_num(draw, ">i8", 0xd3)
+def int64(draw, **kwargs):
+    return _do_num(draw, ">i8", 0xd3, kwargs)
 
 
 class _Nan(object):
@@ -102,32 +106,42 @@ def _float_postpack(v):
     return _nan if numpy.isnan(v) else v
 
 @composite
-def float32(draw):
-    return _do_num(draw, ">f4", 0xca, _float_postpack)
+def float32(draw, **kwargs):
+    return _do_num(draw, ">f4", 0xca, kwargs, _float_postpack)
 @composite
-def float64(draw):
-    return _do_num(draw, ">f8", 0xcb, _float_postpack)
+def float64(draw, **kwargs):
+    return _do_num(draw, ">f8", 0xcb, kwargs, _float_postpack)
 
 
-def _do_bin(draw, dtype, firstbyte, binary=binary, prepack=lambda v: v):
-    v = draw(binary(max_size=numpy.iinfo(dtype).max))
+def _limit_size(max_size, kwargs):
+    try:
+        kwargs["max_size"] = min(kwargs["max_size"], max_size)
+    except KeyError:
+        kwargs["max_size"] = max_size
+    kwargs.setdefault("average_size", min(20, max_size))  # general tweak to avoid Hypothesis buffer overruns.
+
+
+def _do_bin(draw, dtype, firstbyte, kwargs, prepack=lambda v: v):
+    _limit_size(_num_max(dtype), kwargs)
+    v = draw(kwargs.pop("binary", binary)(**kwargs))
     data = prepack(v)
     return b"%c%s%s" % (firstbyte, _num_tobytes(dtype, len(data)), data), v
 
 @composite
-def bin8(draw):
-    return _do_bin(draw, ">u1", 0xc4)
+def bin8(draw, **kwargs):
+    return _do_bin(draw, ">u1", 0xc4, kwargs)
 @composite
-def bin16(draw):
-    return _do_bin(draw, ">u2", 0xc5)
+def bin16(draw, **kwargs):
+    return _do_bin(draw, ">u2", 0xc5, kwargs)
 @composite
-def bin32(draw):
-    return _do_bin(draw, ">u4", 0xc6)
+def bin32(draw, **kwargs):
+    return _do_bin(draw, ">u4", 0xc6, kwargs)
 
 
 @composite
-def fixstr(draw):
-    v = draw(text(max_size=31))
+def fixstr(draw, **kwargs):
+    _limit_size(31, kwargs)
+    v = draw(text(**kwargs))
     data = v.encode("utf-8")
     assume(len(data) < 31)  # a unicode character can be many bytes, so there's a small chance that we might overrun.
     return b"%c%s" % (0xa0 | len(data), data), v
@@ -140,14 +154,17 @@ def _str_prepack(dtype):
     return f
 
 @composite
-def str8(draw):
-    return _do_bin(draw, ">u1", 0xd9, binary=text, prepack=_str_prepack(">u1"))
+def str8(draw, **kwargs):
+    kwargs["binary"] = kwargs.pop("text", text)
+    return _do_bin(draw, ">u1", 0xd9, kwargs, _str_prepack(">u1"))
 @composite
-def str16(draw):
-    return _do_bin(draw, ">u2", 0xda, binary=text, prepack=_str_prepack(">u2"))
+def str16(draw, **kwargs):
+    kwargs["binary"] = kwargs.pop("text", text)
+    return _do_bin(draw, ">u2", 0xda, kwargs, _str_prepack(">u2"))
 @composite
-def str32(draw):
-    return _do_bin(draw, ">u4", 0xdb, binary=text, prepack=_str_prepack(">u4"))
+def str32(draw, **kwargs):
+    kwargs["binary"] = kwargs.pop("text", text)
+    return _do_bin(draw, ">u4", 0xdb, kwargs, _str_prepack(">u4"))
 
 
 scalar_formats = one_of(
