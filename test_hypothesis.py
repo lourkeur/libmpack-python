@@ -6,7 +6,7 @@ import mpack
 
 
 class TestMpack(unittest.TestCase):
-    @given(all_types)
+    @given(scalar_formats)
     def test_pack_unpack(self, x):
         packed_obj, obj = x
         unpacker = mpack.Unpacker()
