@@ -16,9 +16,36 @@ def nil(draw, none=none):
     return b"\xc0", None
 
 @composite
-def bool(draw, booleans=booleans):
+def boolean(draw, booleans=booleans):
     v = draw(booleans())
-    return b"%c" % (0xc2 + v), v
+    return b"%c" % (0xc2 + v), _True if v else _False
+
+class _Bool(object):
+    """workaround because True == 1 and False == 0"""
+    def __init__(self, x):
+        self.val = bool(x)
+
+    def __eq__(self, other):
+        if isinstance(other, _Bool):
+            other = other.val
+        elif not isinstance(other, bool):
+            return NotImplemented
+        return self.val.__eq__(other)
+
+    def __ne__(self, other):
+        if isinstance(other, _Bool):
+            other = other.val
+        elif not isinstance(other, bool):
+            return NotImplemented
+        return self.val.__ne__(other)
+
+    def __hash__(self):
+        return self.val.__hash__()
+
+    def __repr__(self):
+        return "_Bool(%s)" % self.val
+
+_True, _False = _Bool(True), _Bool(False)
 
 
 def _limit_values(min_value, max_value, kwargs):
@@ -89,17 +116,20 @@ class _Nan(object):
     This greatly simplifies things downstream.
     """
     def __eq__(self, other):
-        if not numpy.isreal(other):
+        if numpy.dtype(other).kind != 'f':
             return NotImplemented
         return numpy.isnan(other)
 
     def __ne__(self, other):
-        if not numpy.isreal(other):
+        if numpy.dtype(other).kind != 'f':
             return NotImplemented
         return not numpy.isnan(other)
 
     def __hash__(self):
         return hash(numpy.nan)
+
+    def __repr__(self):
+        return "_Nan()"
 
 _nan = _Nan()
 def _float_postpack(v):
@@ -169,7 +199,7 @@ def str32(draw, **kwargs):
 
 all_scalar = one_of(
         nil(),
-        bool(),
+        boolean(),
         positive_fixnum(),
         negative_fixnum(),
         uint8(),
