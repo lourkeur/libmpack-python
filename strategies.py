@@ -116,12 +116,12 @@ class _Nan(object):
     This greatly simplifies things downstream.
     """
     def __eq__(self, other):
-        if numpy.dtype(other).kind != 'f':
+        if numpy.dtype(type(other)).kind != 'f':
             return NotImplemented
         return numpy.isnan(other)
 
     def __ne__(self, other):
-        if numpy.dtype(other).kind != 'f':
+        if numpy.dtype(type(other)).kind != 'f':
             return NotImplemented
         return not numpy.isnan(other)
 
