@@ -182,31 +182,12 @@ all_scalar = one_of(
         )
 
 
-class _Sequence(tuple):
-    """mpack yields lists, but we don't wan't to yield those because they are not hashable."""
-    def __eq__(self, other):
-        try:
-            other = tuple(other)
-        except TypeError:
-            return NotImplemented
-        return super(_Sequence, self).__eq__(other)
-
-    def __ne__(self, other):
-        try:
-            other = tuple(other)
-        except TypeError:
-            return NotImplemented
-        return super(_Sequence, self).__ne__(other)
-
-    def __hash__(self):
-        return super(_Sequence, self).__hash__()
-
 def _concat_elements(l):
     packed_vs, vs = bytearray(), []
     for packed_v, v in l:
         packed_vs += packed_v
         vs.append(v)
-    return bytes(packed_vs), _Sequence(vs)
+    return bytes(packed_vs), vs
 
 
 @composite
@@ -250,6 +231,13 @@ def _wrap_key(k):
     v, packed = k
     return _KeyWrapper(v, packed)
 
+def _hashable(k):
+    try: hash(k)
+    except TypeError:
+        return False
+    else:
+        return True
+
 def _concat_items(d):
     packed_items, items = _concat_elements(
             (packed_key + packed_val, (key, val))
@@ -258,7 +246,7 @@ def _concat_items(d):
 
 def _prepare_keys(kwargs):
     keys = kwargs.setdefault("keys", all_scalar)
-    kwargs["keys"] = keys.map(_wrap_key)
+    kwargs["keys"] = keys.filter(_hashable).map(_wrap_key)
 
 @composite
 def fixmap(draw, dictionaries=dictionaries, **kwargs):
