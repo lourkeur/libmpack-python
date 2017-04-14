@@ -20,3 +20,7 @@ class TestMpack(unittest.TestCase):
     def test_unpacking_c1(self):
         u = mpack.Unpacker()
         u(b"\xc1")
+
+
+if __name__ == '__main__':
+    unittest.main()
