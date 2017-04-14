@@ -23,26 +23,14 @@ def boolean(draw, booleans=booleans):
     v = draw(booleans())
     return b"%c" % (0xc2 + v), bool(v)
 
-def _limit_values(min_value, max_value, kwargs):
-    try:
-        kwargs["min_value"] = max(kwargs["min_value"], min_value)
-    except KeyError:
-        kwargs["min_value"] = min_value
-    try:
-        kwargs["max_value"] = min(kwargs["max_value"], max_value)
-    except KeyError:
-        kwargs["max_value"] = max_value
-
 @composite
 def positive_fixnum(draw, integers=integers, **kwargs):
-    _limit_values(0, 127, kwargs)
-    v = draw(integers(**kwargs))
+    v = draw(integers(0, 127))
     return b"%c" % v, v
 
 @composite
 def negative_fixnum(draw, integers=integers, **kwargs):
-    _limit_values(-32, -1, kwargs)
-    v = draw(integers(**kwargs))
+    v = draw(integers(-32, -1))
     return b"%c" % (v + 256 | 0xe0), v
 
 def _num_tobytes(dtype, v):
@@ -51,37 +39,35 @@ def _num_tobytes(dtype, v):
 def _num_max(dtype):
     return numpy.iinfo(dtype).max
 
-def _do_num(draw, dtype, firstbyte, kwargs, postpack=lambda v: v):
-    if "min_value" in kwargs or "max_value" in kwargs:
-        raise NotImplementedError("custom limits")
+def _do_num(draw, dtype, firstbyte, postpack=lambda v: v):
     v = draw(arrays(dtype, ()))
     return b"%c%s" % (firstbyte, _num_tobytes(dtype, v)), postpack(v)
 
 @composite
-def uint8(draw, **kwargs):
-    return _do_num(draw, ">u1", 0xcc, kwargs)
+def uint8(draw):
+    return _do_num(draw, ">u1", 0xcc)
 @composite
-def uint16(draw, **kwargs):
-    return _do_num(draw, ">u2", 0xcd, kwargs)
+def uint16(draw):
+    return _do_num(draw, ">u2", 0xcd)
 @composite
-def uint32(draw, **kwargs):
-    return _do_num(draw, ">u4", 0xce, kwargs)
+def uint32(draw):
+    return _do_num(draw, ">u4", 0xce)
 @composite
-def uint64(draw, **kwargs):
-    return _do_num(draw, ">u8", 0xcf, kwargs)
+def uint64(draw):
+    return _do_num(draw, ">u8", 0xcf)
 
 @composite
-def int8(draw, **kwargs):
-    return _do_num(draw, ">i1", 0xd0, kwargs)
+def int8(draw):
+    return _do_num(draw, ">i1", 0xd0)
 @composite
-def int16(draw, **kwargs):
-    return _do_num(draw, ">i2", 0xd1, kwargs)
+def int16(draw):
+    return _do_num(draw, ">i2", 0xd1)
 @composite
-def int32(draw, **kwargs):
-    return _do_num(draw, ">i4", 0xd2, kwargs)
+def int32(draw):
+    return _do_num(draw, ">i4", 0xd2)
 @composite
-def int64(draw, **kwargs):
-    return _do_num(draw, ">i8", 0xd3, kwargs)
+def int64(draw):
+    return _do_num(draw, ">i8", 0xd3)
 
 
 class _Nan(object):
@@ -110,19 +96,18 @@ def _float_postpack(v):
     return _nan if numpy.isnan(v) else v
 
 @composite
-def float32(draw, **kwargs):
-    return _do_num(draw, ">f4", 0xca, kwargs, _float_postpack)
+def float32(draw):
+    return _do_num(draw, ">f4", 0xca, _float_postpack)
 @composite
-def float64(draw, **kwargs):
-    return _do_num(draw, ">f8", 0xcb, kwargs, _float_postpack)
+def float64(draw):
+    return _do_num(draw, ">f8", 0xcb, _float_postpack)
 
 
 def _limit_size(max_size, kwargs):
-    try:
-        kwargs["max_size"] = min(kwargs["max_size"], max_size)
-    except KeyError:
-        kwargs["max_size"] = max_size
-    kwargs.setdefault("average_size", min(20, max_size))  # general tweak to avoid Hypothesis buffer overruns.
+    if 'max_size' in kwargs:
+        max_size = min(kwargs['max_size'], max_size)
+        kwargs['max_size'] = max_size
+    kwargs['average_size'] = min(20, max_size)  # general tweak to avoid Hypothesis buffer overruns.
 
 
 def _do_bin(draw, dtype, firstbyte, kwargs, prepack=lambda v: v):
