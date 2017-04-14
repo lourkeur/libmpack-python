@@ -138,22 +138,23 @@ def fixstr(draw, **kwargs):
 def _str_prepack(dtype):
     def f(v):
         data = v.encode("utf-8")
-        assume(len(data) < numpy.iinfo(dtype).max)
+        assume(len(data) < _num_max(dtype))
         return data
     return f
 
+def _do_str(draw, dtype, firstbyte, kwargs):
+    kwargs["binary"] = kwargs.pop("text", text)
+    return _do_bin(draw, dtype, firstbyte, kwargs, _str_prepack(dtype))
+
 @composite
 def str8(draw, **kwargs):
-    kwargs["binary"] = kwargs.pop("text", text)
-    return _do_bin(draw, ">u1", 0xd9, kwargs, _str_prepack(">u1"))
+    return _do_str(draw, ">u1", 0xd9, kwargs)
 @composite
 def str16(draw, **kwargs):
-    kwargs["binary"] = kwargs.pop("text", text)
-    return _do_bin(draw, ">u2", 0xda, kwargs, _str_prepack(">u2"))
+    return _do_str(draw, ">u2", 0xda, kwargs)
 @composite
 def str32(draw, **kwargs):
-    kwargs["binary"] = kwargs.pop("text", text)
-    return _do_bin(draw, ">u4", 0xdb, kwargs, _str_prepack(">u4"))
+    return _do_str(draw, ">u4", 0xdb, kwargs)
 
 
 all_scalar = one_of(
@@ -255,11 +256,14 @@ def _concat_items(d):
                 for (packed_key, key), (packed_val, val) in d.items())
     return packed_items, dict(items)
 
+def _prepare_keys(kwargs):
+    keys = kwargs.setdefault("keys", all_scalar)
+    kwargs["keys"] = keys.map(_wrap_key)
+
 @composite
 def fixmap(draw, dictionaries=dictionaries, **kwargs):
     _limit_size(15, kwargs)
-    kwargs.setdefault("keys", all_scalar)
-    kwargs["keys"] = kwargs["keys"].map(_wrap_key)
+    _prepare_keys(kwargs)
     kwargs.setdefault("values", all_scalar)
     d = draw(dictionaries(**kwargs))
     data, v = _concat_items(d)
@@ -267,8 +271,7 @@ def fixmap(draw, dictionaries=dictionaries, **kwargs):
 
 def _do_map(draw, dtype, firstbyte, kwargs):
     _limit_size(_num_max(dtype), kwargs)
-    kwargs.setdefault("keys", all_scalar)
-    kwargs["keys"] = kwargs["keys"].map(_wrap_key)
+    _prepare_keys(kwargs)
     kwargs.setdefault("values", all_scalar)
     d = draw(kwargs.pop("dictionaries", dictionaries)(**kwargs))
     data, v = _concat_items(d)
