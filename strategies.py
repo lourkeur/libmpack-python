@@ -130,7 +130,7 @@ def bin32(draw, **kwargs):
 @composite
 def fixstr(draw, **kwargs):
     _limit_size(31, kwargs)
-    v = draw(text(**kwargs))
+    v = draw(kwargs.pop('text', text)(**kwargs))
     data = v.encode("utf-8")
     assume(len(data) < 31)  # a unicode character can be many bytes, so there's a small chance that we might overrun.
     return b"%c%s" % (0xa0 | len(data), data), v
