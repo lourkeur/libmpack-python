@@ -1,12 +1,12 @@
 from hypothesis import given
-from strategies import *
+import strategies
 import unittest
 
 import mpack
 
 
 class TestMpack(unittest.TestCase):
-    @given(fixarray(elements=fixmap(), average_size=2))
+    @given(strategies.everything())
     def test_pack_unpack(self, x):
         packed_obj, obj = x
         unpacker = mpack.Unpacker()

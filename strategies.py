@@ -103,15 +103,17 @@ def float64(draw):
     return _do_num(draw, ">f8", 0xcb, _float_postpack)
 
 
-def _limit_size(max_size, kwargs):
+def _limit_size(max_size, average_size, kwargs):
     if 'max_size' in kwargs:
         max_size = min(kwargs['max_size'], max_size)
         kwargs['max_size'] = max_size
-    kwargs['average_size'] = min(20, max_size)  # general tweak to avoid Hypothesis buffer overruns.
+    kwargs['average_size'] = min(average_size, max_size)
 
+# general tweak to avoid Hypothesis buffer overruns.
+_AVERAGE_STR_SIZE = 20
 
 def _do_bin(draw, dtype, firstbyte, kwargs, prepack=lambda v: v):
-    _limit_size(_num_max(dtype), kwargs)
+    _limit_size(_num_max(dtype), _AVERAGE_STR_SIZE, kwargs)
     v = draw(kwargs.pop("binary", binary)(**kwargs))
     data = prepack(v)
     return b"%c%s%s" % (firstbyte, _num_tobytes(dtype, len(data)), data), v
@@ -129,7 +131,7 @@ def bin32(draw, **kwargs):
 
 @composite
 def fixstr(draw, **kwargs):
-    _limit_size(31, kwargs)
+    _limit_size(31, _AVERAGE_STR_SIZE, kwargs)
     v = draw(kwargs.pop('text', text)(**kwargs))
     data = v.encode("utf-8")
     assume(len(data) < 31)  # a unicode character can be many bytes, so there's a small chance that we might overrun.
@@ -157,29 +159,9 @@ def str32(draw, **kwargs):
     return _do_str(draw, ">u4", 0xdb, kwargs)
 
 
-all_scalar = one_of(
-        nil(),
-        boolean(),
-        positive_fixnum(),
-        negative_fixnum(),
-        uint8(),
-        uint16(),
-        uint32(),
-        uint64(),
-        int8(),
-        int16(),
-        int32(),
-        int64(),
-        float32(),
-        float64(),
-        bin8(),
-        bin16(),
-        bin32(),
-        fixstr(),
-        str8(),
-        str16(),
-        str32(),
-        )
+@composite
+def all_scalar(draw, **kwargs):
+    return draw(nil() | boolean() | positive_fixnum() | negative_fixnum() | uint8() | uint16() | uint32() | uint64() | int8() | int16() | int32() | int64() | float32() | float64() | bin8(**kwargs) | bin16(**kwargs) | bin32(**kwargs) | fixstr(**kwargs) | str8(**kwargs) | str16(**kwargs) | str32(**kwargs))
 
 
 def _concat_elements(l):
@@ -189,17 +171,18 @@ def _concat_elements(l):
         vs.append(v)
     return bytes(packed_vs), vs
 
+_AVERAGE_ARRAY_SIZE = 6
 
 @composite
 def fixarray(draw, lists=lists, **kwargs):
-    _limit_size(15, kwargs)
+    _limit_size(15, _AVERAGE_ARRAY_SIZE, kwargs)
     kwargs.setdefault("elements", all_scalar)
     l = draw(lists(**kwargs))
     data, v = _concat_elements(l)
     return b"%c%s" % (0x90 | len(v), data), v
 
 def _do_array(draw, dtype, firstbyte, kwargs):
-    _limit_size(_num_max(dtype), kwargs)
+    _limit_size(_num_max(dtype), _AVERAGE_ARRAY_SIZE, kwargs)
     kwargs.setdefault("elements", all_scalar)
     l = draw(kwargs.pop("lists", lists)(**kwargs))
     data, v = _concat_elements(l)
@@ -208,9 +191,14 @@ def _do_array(draw, dtype, firstbyte, kwargs):
 @composite
 def array16(draw, **kwargs):
     return _do_array(draw, ">u2", 0xdc, kwargs)
+
 @composite
 def array32(draw, **kwargs):
     return _do_array(draw, ">u4", 0xdd, kwargs)
+
+@composite
+def all_array(draw, **kwargs):
+    return draw(fixarray(**kwargs) | array16(**kwargs) | array32(**kwargs))
 
 
 class _KeyWrapper(collections.namedtuple('_key_wrapper', 'packed v')):
@@ -248,9 +236,11 @@ def _prepare_keys(kwargs):
     keys = kwargs.setdefault("keys", all_scalar)
     kwargs["keys"] = keys.filter(_hashable).map(_wrap_key)
 
+_AVERAGE_MAP_SIZE = 3
+
 @composite
 def fixmap(draw, dictionaries=dictionaries, **kwargs):
-    _limit_size(15, kwargs)
+    _limit_size(15, _AVERAGE_MAP_SIZE, kwargs)
     _prepare_keys(kwargs)
     kwargs.setdefault("values", all_scalar)
     d = draw(dictionaries(**kwargs))
@@ -258,7 +248,7 @@ def fixmap(draw, dictionaries=dictionaries, **kwargs):
     return b"%c%s" % (0x80 | len(v), data), v
 
 def _do_map(draw, dtype, firstbyte, kwargs):
-    _limit_size(_num_max(dtype), kwargs)
+    _limit_size(_num_max(dtype), _AVERAGE_MAP_SIZE, kwargs)
     _prepare_keys(kwargs)
     kwargs.setdefault("values", all_scalar)
     d = draw(kwargs.pop("dictionaries", dictionaries)(**kwargs))
@@ -271,3 +261,11 @@ def map16(draw, **kwargs):
 @composite
 def map32(draw, **kwargs):
     return _do_map(draw, ">u4", 0xdf, kwargs)
+
+@composite
+def all_map(draw, **kwargs):
+    return draw(fixmap(**kwargs) | map16(**kwargs) | map32(**kwargs))
+
+@composite
+def everything(draw):
+    return draw(recursive(all_scalar(), lambda S: all_array(elements=S) | all_map(keys=S, values=S)))
