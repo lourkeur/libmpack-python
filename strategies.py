@@ -7,6 +7,9 @@ then return the packed representation tupled with the original value.
 
 from hypothesis.strategies import (assume, composite, none, booleans, integers, lists,
         dictionaries, recursive, one_of, text, binary)
+from hypothesis.extra.numpy import arrays
+
+import collections
 import numpy
 
 
@@ -18,35 +21,7 @@ def nil(draw, none=none):
 @composite
 def boolean(draw, booleans=booleans):
     v = draw(booleans())
-    return b"%c" % (0xc2 + v), _True if v else _False
-
-class _Bool(object):
-    """workaround because True == 1 and False == 0"""
-    def __init__(self, x):
-        self.val = bool(x)
-
-    def __eq__(self, other):
-        if isinstance(other, _Bool):
-            other = other.val
-        elif not isinstance(other, bool):
-            return NotImplemented
-        return self.val.__eq__(other)
-
-    def __ne__(self, other):
-        if isinstance(other, _Bool):
-            other = other.val
-        elif not isinstance(other, bool):
-            return NotImplemented
-        return self.val.__ne__(other)
-
-    def __hash__(self):
-        return self.val.__hash__()
-
-    def __repr__(self):
-        return "_Bool(%s)" % self.val
-
-_True, _False = _Bool(True), _Bool(False)
-
+    return b"%c" % (0xc2 + v), bool(v)
 
 def _limit_values(min_value, max_value, kwargs):
     try:
@@ -77,7 +52,6 @@ def _num_max(dtype):
     return numpy.iinfo(dtype).max
 
 def _do_num(draw, dtype, firstbyte, kwargs, postpack=lambda v: v):
-    from hypothesis.extra.numpy import arrays
     if "min_value" in kwargs or "max_value" in kwargs:
         raise NotImplementedError("custom limits")
     v = draw(arrays(dtype, ()))
@@ -272,17 +246,35 @@ def array32(draw, **kwargs):
     return _do_array(draw, ">u4", 0xdd, kwargs)
 
 
+class _KeyWrapper(collections.namedtuple('_key_wrapper', 'packed v')):
+    def __eq__(self, other):
+        if not isinstance(other, _KeyWrapper):
+            return NotImplemented
+        return self.v == other.v
+
+    def __ne__(self, other):
+        if not isinstance(other, _KeyWrapper):
+            return NotImplemented
+        return self.v != other.v
+
+    def __hash__(self):
+        return hash(self.v)
+
+def _wrap_key(k):
+    v, packed = k
+    return _KeyWrapper(v, packed)
+
 def _concat_items(d):
     packed_items, items = _concat_elements(
             (packed_key + packed_val, (key, val))
                 for (packed_key, key), (packed_val, val) in d.items())
     return packed_items, dict(items)
 
-
 @composite
 def fixmap(draw, dictionaries=dictionaries, **kwargs):
     _limit_size(15, kwargs)
     kwargs.setdefault("keys", all_scalar)
+    kwargs["keys"] = kwargs["keys"].map(_wrap_key)
     kwargs.setdefault("values", all_scalar)
     d = draw(dictionaries(**kwargs))
     data, v = _concat_items(d)
@@ -291,6 +283,7 @@ def fixmap(draw, dictionaries=dictionaries, **kwargs):
 def _do_map(draw, dtype, firstbyte, kwargs):
     _limit_size(_num_max(dtype), kwargs)
     kwargs.setdefault("keys", all_scalar)
+    kwargs["keys"] = kwargs["keys"].map(_wrap_key)
     kwargs.setdefault("values", all_scalar)
     d = draw(kwargs.pop("dictionaries", dictionaries)(**kwargs))
     data, v = _concat_items(d)
