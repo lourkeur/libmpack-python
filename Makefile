@@ -20,6 +20,8 @@ clean:
 
 test: build
 	python test.py
+	AVOID_SEGFAULT=yes python test_issue2.py
+	python test_issue2.py
 
 build: mpack-src
 	python setup.py build_ext --inplace
