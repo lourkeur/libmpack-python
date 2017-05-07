@@ -106,7 +106,7 @@ def float64(draw):
 def _limit_size(max_size, average_size, kwargs):
     if 'max_size' in kwargs:
         max_size = min(kwargs['max_size'], max_size)
-        kwargs['max_size'] = max_size
+    kwargs['max_size'] = max_size
     kwargs['average_size'] = min(average_size, max_size)
 
 # general tweak to avoid Hypothesis buffer overruns.
