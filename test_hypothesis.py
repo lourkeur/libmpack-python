@@ -22,10 +22,10 @@ class TestMpack(unittest.TestCase):
                 self.assertEqual(n, len(packed_obj))
                 self.assertEqual(unpacked_obj, obj)
 
-    @unittest.skip("hangs and requires the process to be killed manually")
     def test_unpacking_c1(self):
-        u = mpack.Unpacker()
-        u(b"\xc1")
+        unpack = mpack.Unpacker()
+        with self.assertRaises(mpack.MpackException):
+            unpack(b"\xc1")
 
 
 if __name__ == '__main__':
