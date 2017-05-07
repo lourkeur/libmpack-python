@@ -89,7 +89,7 @@ class _Nan(object):
         return hash(numpy.nan)
 
     def __repr__(self):
-        return "_Nan()"
+        return 'nan'
 
 _nan = _Nan()
 def _float_postpack(v):
