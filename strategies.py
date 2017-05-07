@@ -159,9 +159,78 @@ def str32(draw, **kwargs):
     return _do_str(draw, ">u4", 0xdb, kwargs)
 
 
+class _ExtBase(object):
+    # code = ...
+    def __init__(self, data):
+        assert hasattr(self, 'code')
+        self.data = data
+
+    def __eq__(self, other):
+        if not isinstance(other, type(self)):
+            return NotImplemented
+        return self.data == other.data
+
+    def __ne__(self, other):
+        if not isinstance(other, type(self)):
+            return NotImplemented
+        return self.data != other.data
+
+    def __hash__(self):
+        return hash((self.code, self.data))
+
+ext_classes = [type('_Ext%d' % i, (_ExtBase,), {'code': i}) for i in range(128)]
+def ext_pack(ext):
+    return ext.code, ext.data
+def ext_unpack(code, data):
+    return ext_classes[code](data)
+
+def _do_fixext(draw, size, firstbyte, kwargs):
+    code = draw(kwargs.pop('extcodes', integers(0, 127)))
+    data = draw(kwargs.pop("binary", binary)(min_size=size, max_size=size))
+    return b"%c%c%s" % (firstbyte, code, data), ext_unpack(code, data)
+
+@composite
+def fixext1(draw, **kwargs):
+    return _do_fixext(draw, 1, 0xd4, kwargs)
+
+@composite
+def fixext2(draw, **kwargs):
+    return _do_fixext(draw, 2, 0xd5, kwargs)
+
+@composite
+def fixext4(draw, **kwargs):
+    return _do_fixext(draw, 4, 0xd6, kwargs)
+
+@composite
+def fixext8(draw, **kwargs):
+    return _do_fixext(draw, 8, 0xd7, kwargs)
+
+@composite
+def fixext16(draw, **kwargs):
+    return _do_fixext(draw, 16, 0xd8, kwargs)
+
+def _do_ext(draw, dtype, firstbyte, kwargs):
+    code = draw(kwargs.pop('extcodes', integers(0, 127)))
+    _limit_size(_num_max(dtype), _AVERAGE_STR_SIZE, kwargs)
+    data = draw(kwargs.pop("binary", binary)(**kwargs))
+    return b'%c%s%c%s' % (firstbyte, _num_tobytes(dtype, len(data)), code, data), ext_unpack(code, data)
+
+@composite
+def ext8(draw, **kwargs):
+    return _do_ext(draw, '>u1', 0xc7, kwargs)
+
+@composite
+def ext16(draw, **kwargs):
+    return _do_ext(draw, '>u2', 0xc8, kwargs)
+
+@composite
+def ext32(draw, **kwargs):
+    return _do_ext(draw, '>u4', 0xc9, kwargs)
+
+
 @composite
 def all_scalar(draw, **kwargs):
-    return draw(nil() | boolean() | positive_fixnum() | negative_fixnum() | uint8() | uint16() | uint32() | uint64() | int8() | int16() | int32() | int64() | float32() | float64() | bin8(**kwargs) | bin16(**kwargs) | bin32(**kwargs) | fixstr(**kwargs) | str8(**kwargs) | str16(**kwargs) | str32(**kwargs))
+    return draw(nil() | boolean() | positive_fixnum() | negative_fixnum() | uint8() | uint16() | uint32() | uint64() | int8() | int16() | int32() | int64() | float32() | float64() | bin8(**kwargs) | bin16(**kwargs) | bin32(**kwargs) | fixstr(**kwargs) | str8(**kwargs) | str16(**kwargs) | str32(**kwargs) | fixext1(**kwargs) | fixext2(**kwargs) | fixext4(**kwargs) | fixext8(**kwargs) | fixext16(**kwargs) | ext8(**kwargs) | ext16(**kwargs) | ext32(**kwargs))
 
 
 def _concat_elements(l):

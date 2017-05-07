@@ -11,12 +11,13 @@ class TestMpack(unittest.TestCase):
         packed_obj, obj = x
         with self.subTest(packed_obj=packed_obj, obj=obj):
             with self.subTest("unpack(packed_obj) == obj"):
-                unpack = mpack.Unpacker()
+                unpack = mpack.Unpacker(ext=strategies.ext_unpack)
                 unpacked_obj, n = unpack(packed_obj)
                 self.assertEqual(n, len(packed_obj))
                 self.assertEqual(unpacked_obj, obj)
             with self.subTest("unpack(pack(unpack(packed_obj))) == obj"):
-                pack, unpack = mpack.Packer(), mpack.Unpacker()
+                pack = mpack.Packer(ext=strategies.ext_pack)
+                unpack = mpack.Unpacker(ext=strategies.ext_unpack)
                 packed_obj = pack(unpacked_obj)
                 unpacked_obj, n = unpack(packed_obj)
                 self.assertEqual(n, len(packed_obj))
@@ -26,6 +27,19 @@ class TestMpack(unittest.TestCase):
         unpack = mpack.Unpacker()
         with self.assertRaises(mpack.MpackException):
             unpack(b"\xc1")
+
+    @unittest.skip('segfaults')
+    def test_packing_with_ext_dict(self):
+        pack = mpack.Packer(ext={})
+        self.assertEqual(pack(None), b"\xc0")
+
+    def test_unpacking_with_ext_dict(self):
+        unpack = mpack.Unpacker(ext={})
+        self.assertEqual(unpack(b"\xc0"), (None, 1))
+
+    def test_packing_none_with_ext(self):
+        pack = mpack.Packer(ext=lambda x: (ord('c'), b'afebabe'))
+        self.assertEqual(pack(None), b"\xc0")
 
 
 if __name__ == '__main__':
