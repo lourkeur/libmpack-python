@@ -16,7 +16,7 @@ class TestMpack(unittest.TestCase):
                 self.assertEqual(n, len(packed_obj))
                 self.assertEqual(unpacked_obj, obj)
             with self.subTest("unpack(pack(unpack(packed_obj))) == obj"):
-                pack = mpack.Packer(ext=strategies.ext_pack)
+                pack = mpack.Packer()
                 unpack = mpack.Unpacker(ext=strategies.ext_unpack)
                 packed_obj = pack(unpacked_obj)
                 unpacked_obj, n = unpack(packed_obj)
@@ -44,10 +44,6 @@ class TestMpack(unittest.TestCase):
     def test_unpacking_with_ext_dict(self):
         unpack = mpack.Unpacker(ext={})
         self.assertEqual(unpack(b"\xc0"), (None, 1))
-
-    def test_packing_none_with_ext(self):
-        pack = mpack.Packer(ext=lambda x: (ord('c'), b'afebabe'))
-        self.assertEqual(pack(None), b"\xc0")
 
 
 if __name__ == '__main__':
