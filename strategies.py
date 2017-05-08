@@ -259,14 +259,14 @@ _AVERAGE_ARRAY_SIZE = 6
 @composite
 def fixarray(draw, lists=lists, **kwargs):
     _limit_size(15, _AVERAGE_ARRAY_SIZE, kwargs)
-    kwargs.setdefault("elements", all_scalar)
+    kwargs.setdefault("elements", all_scalar())
     l = draw(lists(**kwargs))
     data, v = _concat_elements(l)
     return b"%c%s" % (0x90 | len(v), data), v
 
 def _do_array(draw, dtype, firstbyte, kwargs):
     _limit_size(_num_max(dtype), _AVERAGE_ARRAY_SIZE, kwargs)
-    kwargs.setdefault("elements", all_scalar)
+    kwargs.setdefault("elements", all_scalar())
     l = draw(kwargs.pop("lists", lists)(**kwargs))
     data, v = _concat_elements(l)
     return b"%c%s%s" % (firstbyte, _num_tobytes(dtype, len(v)), data), v
@@ -316,7 +316,7 @@ def _concat_items(d):
     return packed_items, dict(items)
 
 def _prepare_keys(kwargs):
-    keys = kwargs.setdefault("keys", all_scalar)
+    keys = kwargs.setdefault("keys", all_scalar())
     kwargs["keys"] = keys.filter(_hashable).map(_wrap_key)
 
 _AVERAGE_MAP_SIZE = 3
