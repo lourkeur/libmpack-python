@@ -5,8 +5,7 @@ pack it using a slow but easily verified implementation of MessagePack, and
 then return the packed representation tupled with the original value.
 """
 
-from hypothesis.strategies import (assume, composite, none, booleans, integers, lists,
-        dictionaries, recursive, one_of, text, binary)
+from hypothesis.strategies import assume, composite, just, none, booleans, integers, lists, tuples, dictionaries, recursive, sampled_from, text, binary
 from hypothesis.extra.numpy import arrays
 
 import collections
@@ -352,3 +351,22 @@ def all_map(draw, **kwargs):
 @composite
 def everything(draw):
     return draw(recursive(all_scalar(), lambda S: all_array(elements=S) | all_map(values=S)))
+
+
+_msg_types = 'request', 'response', 'notification'
+
+@composite
+def msg(draw, types=_msg_types, msg_id=uint32(), method=all_str(), params=all_array(), has_error=booleans(), errors=everything(), results=everything()):
+    packed_t, t = draw(positive_fixnum(values=sampled_from(types), prepack=lambda t: _msg_types.index(t)))
+    if t == 'request':
+        payload_tail = msg_id, method, params
+    elif t == 'response':
+        if draw(has_error):
+            payload_tail = msg_id, errors, nil()
+        else:
+            payload_tail = msg_id, nil(), results
+    elif t == 'notification':
+        payload_tail = method, params
+    else:
+        raise ValueError("Invalid message type", t)
+    return draw(fixarray(lists=lambda **kwargs: tuples(just((packed_t, t)), *payload_tail)))

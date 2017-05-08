@@ -23,6 +23,14 @@ class TestMpack(unittest.TestCase):
                 self.assertEqual(n, len(packed_obj))
                 self.assertEqual(unpacked_obj, obj)
 
+    @given(strategies.msg(types=('request',)))
+    def test_unpack_request(self, x):
+        # TODO: rules based stateful testing
+        packed_msg, msg = x
+        msg_type, msg_id, method, params = msg
+        s = mpack.Session()
+        self.assertEqual(s.receive(packed_msg), (len(packed_msg), msg_type, method, params, msg_id))
+
     def test_unpacking_c1(self):
         unpack = mpack.Unpacker()
         with self.assertRaises(mpack.MpackException):
