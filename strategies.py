@@ -351,4 +351,4 @@ def all_map(draw, **kwargs):
 
 @composite
 def everything(draw):
-    return draw(recursive(all_scalar(), lambda S: all_array(elements=S) | all_map(keys=S, values=S)))
+    return draw(recursive(all_scalar(), lambda S: all_array(elements=S) | all_map(values=S)))
