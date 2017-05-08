@@ -14,24 +14,23 @@ import numpy
 
 
 @composite
-def nil(draw, none=none):
-    draw(none())
+def nil(draw):
     return b"\xc0", None
 
 @composite
-def boolean(draw, booleans=booleans):
-    v = draw(booleans())
+def boolean(draw, values=booleans()):
+    v = draw(values)
     return b"%c" % (0xc2 + v), bool(v)
 
 @composite
-def positive_fixnum(draw, integers=integers, **kwargs):
-    v = draw(integers(0, 127))
-    return b"%c" % v, v
+def positive_fixnum(draw, values=integers(0, 127).map(numpy.int8), prepack=lambda v: v):
+    v = draw(values)
+    return b"%c" % prepack(v), v
 
 @composite
-def negative_fixnum(draw, integers=integers, **kwargs):
-    v = draw(integers(-32, -1))
-    return b"%c" % (v + 256 | 0xe0), v
+def negative_fixnum(draw, values=integers(-32, -1).map(numpy.int8)):
+    v = draw(values)
+    return b"%c" % (256 + v | 0xe0), numpy.int8(v)
 
 def _num_tobytes(dtype, v):
     return numpy.array(v, dtype).tobytes()
