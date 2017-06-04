@@ -283,7 +283,7 @@ def all_array(draw, **kwargs):
     return draw(fixarray(**kwargs) | array16(**kwargs) | array32(**kwargs))
 
 
-class _KeyWrapper(collections.namedtuple('_KeyWrapper', 'packed v')):
+class KeyWrapper(collections.namedtuple('_KeyWrapper', 'packed v')):
     def __eq__(self, other):
         if not isinstance(other, _KeyWrapper):
             return NotImplemented
