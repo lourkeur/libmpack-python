@@ -117,7 +117,7 @@ def _limit_size(max_size, average_size, kwargs):
     kwargs['average_size'] = min(average_size, max_size)
 
 # general tweak to avoid Hypothesis buffer overruns.
-_AVERAGE_STR_SIZE = 20
+AVERAGE_BIN_SIZE = 20
 
 def _do_bin(draw, dtype, firstbyte, kwargs, prepack=lambda v: v):
     _limit_size(_num_max(dtype), _AVERAGE_STR_SIZE, kwargs)
