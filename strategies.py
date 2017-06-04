@@ -126,8 +126,8 @@ bin16 = _do_bin(">u2", 0xc5)
 bin32 = _do_bin(">u4", 0xc6)
 
 @composite
-def all_bin(draw, **kwargs):
-    return draw(bin8(**kwargs) | bin16(**kwargs) | bin32(**kwargs))
+def all_bin(draw, *args, **kwargs):
+    return draw(one_of(b(*args, **kwargs) for b in (bin8, bin16, bin32)))
 
 
 @composite
@@ -145,8 +145,8 @@ str16 = _do_str(">u2", 0xda)
 str32 = _do_str(">u4", 0xdb)
 
 @composite
-def all_str(draw, **kwargs):
-    return draw(fixstr(**kwargs) | str8(**kwargs) | str16(**kwargs) | str32(**kwargs))
+def all_str(draw, *args, **kwargs):
+    return draw(one_of(s(*args, **kwargs) for s in (fixstr, str8, str16, str32)))
 
 
 class _ExtBase(object):
@@ -203,23 +203,17 @@ ext16 = _do_ext('>u2', 0xc8, kwargs)
 ext32 = _do_ext('>u4', 0xc9, kwargs)
 
 @composite
-def ext8(draw, **kwargs):
-    return _do_ext(draw, '>u1', 0xc7, kwargs)
-@composite
-def ext16(draw, **kwargs):
-    return _do_ext(draw, '>u2', 0xc8, kwargs)
-@composite
-def ext32(draw, **kwargs):
-    return _do_ext(draw, '>u4', 0xc9, kwargs)
-
-@composite
-def all_ext(draw, **kwargs):
-    return draw(fixext1(**kwargs) | fixext2(**kwargs) | fixext4(**kwargs) | fixext8(**kwargs) | fixext16(**kwargs) | ext8(**kwargs) | ext16(**kwargs) | ext32(**kwargs))
+def all_ext(draw, *args, **kwargs):
+    return draw(one_of(e(*args, **kwargs) for e in (ext8, ext16, ext32)))
 
 
 @composite
-def all_scalar(draw, boolean=boolean(), positive_fixnum=positive_fixnum(), negative_fixnum=negative_fixnum(), all_uint=all_uint(), all_int=all_int(), all_float=all_float(), all_bin=all_bin(), all_str=all_str(), all_ext=all_ext()):
-    return draw(nil() | boolean | positive_fixnum | negative_fixnum | all_uint | all_int | all_float | all_bin | all_str)
+def all_scalar(draw, boolean=boolean(), positive_fixnum=positive_fixnum(), negative_fixnum=negative_fixnum(), all_uint=all_uint(), all_int=all_int(), all_float=all_float(), all_bin=all_bin(), all_str=all_str(), fixext1=fixext1(), fixext2=fixext2(), fixext4=fixext4(), fixext8=fixext8(), fixext16=fixext16(), all_ext=all_ext()):
+    return draw(one_of(nil(), boolean, positive_fixnum, negative_fixnum, all_uint, all_int, all_float, all_bin, all_str, fixext1, fixext2, fixext4, fixext8, fixext16, all_ext))
+
+
+
+
 
 
 def _concat_elements(l):
