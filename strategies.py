@@ -145,7 +145,7 @@ def fixstr(draw, **kwargs):
     _limit_size(31, _AVERAGE_STR_SIZE, kwargs)
     v = draw(kwargs.pop('text', text)(**kwargs))
     data = v.encode("utf-8")
-    assume(len(data) < 31)  # a unicode character can be many bytes, so there's a small chance that we might overrun.
+    assume(len(data) <= 31)
     return b"%c%s" % (0xa0 | len(data), data), v
 
 def _str_prepack(dtype):
