@@ -13,6 +13,8 @@ import functools
 import numpy
 import re
 
+from compat import bfmt, callable
+
 
 @composite
 def nil(draw):
@@ -21,17 +23,17 @@ def nil(draw):
 @composite
 def boolean(draw, values=booleans()):
     v = draw(values)
-    return b"%c" % (0xc2 + v), bool(v)
+    return bfmt(b"%c", 0xc2 + v), bool(v)
 
 @composite
 def positive_fixnum(draw, values=integers(0, 127).map(numpy.int8), prepack=lambda v: v):
     v = draw(values)
-    return b"%c" % prepack(v), v
+    return bfmt(b"%c", prepack(v)), v
 
 @composite
 def negative_fixnum(draw, values=integers(-32, -1).map(numpy.int8)):
     v = draw(values)
-    return b"%c" % (0xe0 | 256 + v), numpy.int8(v)
+    return bfmt(b"%c", 0xe0 | 256 + v), numpy.int8(v)
 
 def _num_tobytes(dtype, v):
     return numpy.array(v, dtype).tobytes()
@@ -41,7 +43,7 @@ def _num_max(dtype):
 
 def _do_num(draw, dtype, firstbyte, postpack=lambda v: v):
     v = draw(arrays(dtype, ()))
-    return b"%c%s" % (firstbyte, _num_tobytes(dtype, v)), postpack(v)
+    return bfmt(b"%c%s", firstbyte, _num_tobytes(dtype, v)), postpack(v)
 
 @composite
 def uint8(draw):
@@ -183,7 +185,7 @@ def _do_bin(draw, dtype, firstbyte, payloads, prepack=lambda v: v):
         payloads = payloads(hard_max_size=hard_max_size)
     v = draw(payloads)
     data = prepack(v)
-    return b"%c%s%s" % (firstbyte, _num_tobytes(dtype, len(data)), data), v
+    return bfmt(b"%c%s%s", firstbyte, _num_tobytes(dtype, len(data)), data), v
 
 @composite
 def bin8(draw, payloads=payloads()):
@@ -226,7 +228,7 @@ def fixstr(draw, payloads_text=payloads_text()):
     v = draw(payloads_text)
     data = v.encode("utf-8")
     assume(len(data) <= 31)
-    return b"%c%s" % (0xa0 | len(data), data), v
+    return bfmt(b"%c%s", 0xa0 | len(data), data), v
 
 def _str_prepack(v):
     return v.encode("utf-8")
@@ -281,7 +283,7 @@ def _do_fixext(draw, size, firstbyte, extcodes, payloads):
         payloads = payloads(hard_size=size)
     code, data = draw(extcodes), draw(payloads)
     assume(len(data) == size)
-    return b"%c%c%s" % (firstbyte, code, data), ext_unpack(code, data)
+    return bfmt(b"%c%c%s", firstbyte, code, data), ext_unpack(code, data)
 
 @composite
 def fixext1(draw, extcodes=_default_extcodes, payloads=payloads()):
@@ -315,7 +317,7 @@ def _do_ext(draw, dtype, firstbyte, extcodes, payloads):
         payloads = payloads(hard_max_size=hard_max_size)
     code, data = draw(extcodes), draw(payloads)
     assume(len(data) <= hard_max_size)
-    return b'%c%s%c%s' % (firstbyte, _num_tobytes(dtype, len(data)), code, data), ext_unpack(code, data)
+    return bfmt(b'%c%s%c%s', firstbyte, _num_tobytes(dtype, len(data)), code, data), ext_unpack(code, data)
 
 @composite
 def all_ext(draw, *args, **kwargs):
@@ -363,7 +365,7 @@ def fixarray(draw, array_contents=array_contents()):
     l = draw(array_contents)
     assume(len(l) <= 15)
     data, v = _concat_elements(l)
-    return b"%c%s" % (0x90 | len(v), data), v
+    return bfmt(b"%c%s", 0x90 | len(v), data), v
 
 def _do_array(draw, dtype, firstbyte, array_contents):
     hard_max_size = _num_max(dtype)
@@ -372,7 +374,7 @@ def _do_array(draw, dtype, firstbyte, array_contents):
     l = draw(array_contents)
     assume(len(l) <= hard_max_size)
     data, v = _concat_elements(l)
-    return b"%c%s%s" % (firstbyte, _num_tobytes(dtype, len(v)), data), v
+    return bfmt(b"%c%s%s", firstbyte, _num_tobytes(dtype, len(v)), data), v
 
 @composite
 def array16(draw, array_contents=array_contents()):
@@ -433,7 +435,7 @@ def fixmap(draw, map_contents=map_contents()):
     d = draw(map_contents)
     assume(len(d) <= 15)
     data, v = _concat_items(d)
-    return b"%c%s" % (0x80 | len(v), data), v
+    return bfmt(b"%c%s", 0x80 | len(v), data), v
 
 def _do_map(draw, dtype, firstbyte, map_contents):
     hard_max_size = _num_max(dtype)
@@ -442,7 +444,7 @@ def _do_map(draw, dtype, firstbyte, map_contents):
     d = draw(map_contents)
     assume(len(d) <= hard_max_size)
     data, v = _concat_items(d)
-    return b"%c%s%s" % (firstbyte, _num_tobytes(dtype, len(v)), data), v
+    return bfmt(b"%c%s%s", firstbyte, _num_tobytes(dtype, len(v)), data), v
 
 @composite
 def map16(draw, map_contents=map_contents()):
@@ -457,7 +459,10 @@ def all_map(draw, *args, **kwargs):
 
 @composite
 def everything(draw):
-    return draw(recursive(all_scalar(), lambda S: all_array(array_contents(elements=S)) | all_map(map_contents(values=S))))
+    return draw(recursive(
+        all_scalar(), lambda S:
+            all_array(array_contents(elements=S)) |
+            all_map(map_contents(values=S))))  # lists and dicts are unhashable
 
 
 _msg_types = 'request', 'response', 'notification'

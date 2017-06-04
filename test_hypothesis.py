@@ -4,8 +4,10 @@ import unittest
 
 import mpack
 
+import compat
 
-class TestMpack(unittest.TestCase):
+
+class TestMpack(unittest.TestCase, compat.SubTestMixin):
     @given(strategies.everything())
     def test_pack_unpack(self, x):
         packed_obj, obj = x
