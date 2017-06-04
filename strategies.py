@@ -110,30 +110,20 @@ def all_float(draw):
     return draw(float32() | float64())
 
 
-def _limit_size(max_size, average_size, kwargs):
-    if 'max_size' in kwargs:
-        max_size = min(kwargs['max_size'], max_size)
-    kwargs['max_size'] = max_size
-    kwargs['average_size'] = min(average_size, max_size)
-
 # general tweak to avoid Hypothesis buffer overruns.
 AVERAGE_BIN_SIZE = 20
 
-def _do_bin(draw, dtype, firstbyte, kwargs, prepack=lambda v: v):
-    _limit_size(_num_max(dtype), _AVERAGE_STR_SIZE, kwargs)
-    v = draw(kwargs.pop("binary", binary)(**kwargs))
-    data = prepack(v)
-    return b"%c%s%s" % (firstbyte, _num_tobytes(dtype, len(data)), data), v
+def _do_bin(dtype, firstbyte, binary=binary, prepack=lambda v: v):
+    @composite
+    def _(draw, contents=binary(average_size=AVERAGE_BIN_SIZE, max_size=_num_max(dtype))):
+        data = v = draw(contents)
+        assume(len(data) <= _num_max(dtype))
+        return b"%c%s%s" % (firstbyte, _num_tobytes(dtype, len(data)), data), v
+    return _
 
-@composite
-def bin8(draw, **kwargs):
-    return _do_bin(draw, ">u1", 0xc4, kwargs)
-@composite
-def bin16(draw, **kwargs):
-    return _do_bin(draw, ">u2", 0xc5, kwargs)
-@composite
-def bin32(draw, **kwargs):
-    return _do_bin(draw, ">u4", 0xc6, kwargs)
+bin8 = _do_bin(">u1", 0xc4)
+bin16 = _do_bin(">u2", 0xc5)
+bin32 = _do_bin(">u4", 0xc6)
 
 @composite
 def all_bin(draw, **kwargs):
@@ -141,33 +131,18 @@ def all_bin(draw, **kwargs):
 
 
 @composite
-def fixstr(draw, **kwargs):
-    _limit_size(31, _AVERAGE_STR_SIZE, kwargs)
-    v = draw(kwargs.pop('text', text)(**kwargs))
+def fixstr(draw, contents):
+    v = draw(contents)
     data = v.encode("utf-8")
     assume(len(data) <= 31)
     return b"%c%s" % (0xa0 | len(data), data), v
 
-def _str_prepack(dtype):
-    def f(v):
-        data = v.encode("utf-8")
-        assume(len(data) < _num_max(dtype))
-        return data
-    return f
+def _do_str(draw, dtype, firstbyte, contents):
+    return _do_bin(draw, dtype, firstbyte, binary=text, prepack=lambda v: v.encode("utf-8"))
 
-def _do_str(draw, dtype, firstbyte, kwargs):
-    kwargs["binary"] = kwargs.pop("text", text)
-    return _do_bin(draw, dtype, firstbyte, kwargs, _str_prepack(dtype))
-
-@composite
-def str8(draw, **kwargs):
-    return _do_str(draw, ">u1", 0xd9, kwargs)
-@composite
-def str16(draw, **kwargs):
-    return _do_str(draw, ">u2", 0xda, kwargs)
-@composite
-def str32(draw, **kwargs):
-    return _do_str(draw, ">u4", 0xdb, kwargs)
+str8 = _do_str(">u1", 0xd9)
+str16 = _do_str(">u2", 0xda)
+str32 = _do_str(">u4", 0xdb)
 
 @composite
 def all_str(draw, **kwargs):
@@ -198,33 +173,34 @@ def ext_pack(ext):
     return ext.code, ext.data
 def ext_unpack(code, data):
     return ext_classes[code](data)
+_default_extcodes = integers(0, 127)
 
-def _do_fixext(draw, size, firstbyte, kwargs):
-    code = draw(kwargs.pop('extcodes', integers(0, 127)))
-    data = draw(kwargs.pop("binary", binary)(min_size=size, max_size=size))
-    return b"%c%c%s" % (firstbyte, code, data), ext_unpack(code, data)
+def _do_fixext(size, firstbyte):
+    @composite
+    def _(draw, extcodes=_default_extcodes, payloads=binary(min_size=size, max_size=size)):
+        code = draw(extcodes)
+        data = draw(payloads)
+        assume(len(data) == size)
+        return b"%c%c%s" % (firstbyte, code, data), ext_unpack(code, data)
+    return _
 
-@composite
-def fixext1(draw, **kwargs):
-    return _do_fixext(draw, 1, 0xd4, kwargs)
-@composite
-def fixext2(draw, **kwargs):
-    return _do_fixext(draw, 2, 0xd5, kwargs)
-@composite
-def fixext4(draw, **kwargs):
-    return _do_fixext(draw, 4, 0xd6, kwargs)
-@composite
-def fixext8(draw, **kwargs):
-    return _do_fixext(draw, 8, 0xd7, kwargs)
-@composite
-def fixext16(draw, **kwargs):
-    return _do_fixext(draw, 16, 0xd8, kwargs)
+fixext1 = _do_fixext(1, 0xd4)
+fixext2 = _do_fixext(2, 0xd5)
+fixext4 = _do_fixext(4, 0xd6)
+fixext8 = _do_fixext(8, 0xd7)
+fixext16 = _do_fixext(16, 0xd8)
 
-def _do_ext(draw, dtype, firstbyte, kwargs):
-    code = draw(kwargs.pop('extcodes', integers(0, 127)))
-    _limit_size(_num_max(dtype), _AVERAGE_STR_SIZE, kwargs)
-    data = draw(kwargs.pop("binary", binary)(**kwargs))
-    return b'%c%s%c%s' % (firstbyte, _num_tobytes(dtype, len(data)), code, data), ext_unpack(code, data)
+def _do_ext(dtype, firstbyte, kwargs):
+    @composite
+    def _(draw, extcodes=_default_extcodes, payloads=binary(average_size=AVERAGE_BIN_SIZE, max_size=_num_max(dtype))):
+        code = draw(extcodes)
+        data = draw(payloads)
+        assume(len(data) <= _num_max(dtype))
+        return b"%c%s%c%s" % (firstbyte, _num_tobytes(dtype, len(data)), code, data), ext_unpack(code, data)
+    return _
+ext8 = _do_ext('>u1', 0xc7, kwargs)
+ext16 = _do_ext('>u2', 0xc8, kwargs)
+ext32 = _do_ext('>u4', 0xc9, kwargs)
 
 @composite
 def ext8(draw, **kwargs):
