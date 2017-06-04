@@ -152,7 +152,7 @@ def fixstr(draw, **kwargs):
 def _str_prepack(dtype):
     def f(v):
         data = v.encode("utf-8")
-        assume(len(data) < _num_max(dtype))
+        assume(len(data) <= _num_max(dtype))
         return data
     return f
 
