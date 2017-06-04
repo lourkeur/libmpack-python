@@ -1,10 +1,9 @@
 from hypothesis import given
-import strategies
 import unittest
 
 import mpack
 
-import compat
+from . import compat, strategies
 
 
 class TestMpack(unittest.TestCase, compat.SubTestMixin):

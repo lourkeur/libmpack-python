@@ -23,9 +23,6 @@ class Py2And3StringChecker(doctest.OutputChecker):
         return doctest.OutputChecker.check_output(self, want, got, optionflags)
 
 def load_tests(loader, tests, ignore):
-    tests.addTests(doctest.DocFileSuite('README.rst',
+    tests.addTests(doctest.DocFileSuite('../README.rst',
                                         checker=Py2And3StringChecker()))
     return tests
-
-if __name__ == '__main__':
-    unittest.main()

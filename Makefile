@@ -19,8 +19,7 @@ clean:
 	python setup.py clean
 
 test: build
-	python test.py
-	python test_hypothesis.py
+	python -m unittest discover
 
 build: mpack-src
 	python setup.py build_ext --inplace

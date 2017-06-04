@@ -13,7 +13,7 @@ import functools
 import numpy
 import re
 
-from compat import bfmt, callable
+from .compat import bfmt, callable
 
 
 @composite
