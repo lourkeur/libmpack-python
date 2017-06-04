@@ -462,7 +462,8 @@ def everything(draw):
     return draw(recursive(
         all_scalar(), lambda S:
             all_array(array_contents(elements=S)) |
-            all_map(map_contents(values=S))))  # lists and dicts are unhashable
+            all_map(map_contents(values=S)),  # lists and dicts are unhashable
+            max_leaves=4))
 
 
 _msg_types = 'request', 'response', 'notification'
