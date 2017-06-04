@@ -95,9 +95,9 @@ class _Nan(object):
     def __repr__(self):
         return 'nan'
 
-_nan = _Nan()
+nan = _Nan()
 def _float_postpack(v):
-    return _nan if numpy.isnan(v) else v
+    return nan if numpy.isnan(v) else v
 
 @composite
 def float32(draw):
