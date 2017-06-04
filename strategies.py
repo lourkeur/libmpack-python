@@ -30,7 +30,7 @@ def positive_fixnum(draw, values=integers(0, 127).map(numpy.int8), prepack=lambd
 @composite
 def negative_fixnum(draw, values=integers(-32, -1).map(numpy.int8)):
     v = draw(values)
-    return b"%c" % (256 + v | 0xe0), numpy.int8(v)
+    return b"%c" % (0xe0 | 256 + v), numpy.int8(v)
 
 def _num_tobytes(dtype, v):
     return numpy.array(v, dtype).tobytes()
