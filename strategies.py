@@ -326,7 +326,7 @@ def all_ext(draw, *args, **kwargs):
 
 @composite
 def all_scalar(draw, boolean=boolean(), positive_fixnum=positive_fixnum(), negative_fixnum=negative_fixnum(), all_uint=all_uint(), all_int=all_int(), all_float=all_float(), all_bin=all_bin(), all_str=all_str(), all_ext=all_ext()):
-    return draw(one_of(nil(), boolean, positive_fixnum, negative_fixnum, all_uint, all_int, all_float, all_bin, all_str, all_ext))
+    return draw(one_of(nil(), boolean, positive_fixnum, negative_fixnum, all_uint, all_int, all_float, all_bin, all_str))
 
 
 def _concat_elements(l):
