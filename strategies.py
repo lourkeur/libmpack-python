@@ -9,6 +9,7 @@ from hypothesis.strategies import assume, composite, just, none, booleans, integ
 from hypothesis.extra.numpy import arrays
 
 import collections
+import functools
 import numpy
 
 
@@ -212,8 +213,15 @@ def all_scalar(draw, boolean=boolean(), positive_fixnum=positive_fixnum(), negat
     return draw(one_of(nil(), boolean, positive_fixnum, negative_fixnum, all_uint, all_int, all_float, all_bin, all_str, fixext1, fixext2, fixext4, fixext8, fixext16, all_ext))
 
 
+class PartialStrategy:
+    def __init__(self, *args, **kwargs):
+        self.wrapped = functools.partial(*args, **kwargs)
 
+    def __call__(self, *args, **kwargs):
+        return self.wrapped(*args, **kwargs)
 
+    def __str__(self):
+        return self.wrapped().__str__()
 
 
 def _concat_elements(l):
@@ -223,30 +231,48 @@ def _concat_elements(l):
         vs.append(v)
     return bytes(packed_vs), vs
 
-_AVERAGE_ARRAY_SIZE = 6
+AVERAGE_ARRAY_SIZE = 6
+
+@PartialStrategy
+@composite
+def array_contents(  # arglist kept in sync with on hypothesis.strategies.list
+        draw,
+        elements=all_scalar(),
+        min_size=None,
+        average_size=None,
+        max_size=None,
+        unique_by=None,
+        unique=False,
+        *,
+        hard_max_size=None,
+        ):
+    assert hard_max_size is not None
+    if max_size is None or max_size > hard_max_size:
+        max_size = hard_max_size
+    if average_size is None:
+        average_size = AVERAGE_ARRAY_SIZE
+    return draw(lists(elements, min_size, average_size, max_size, unique_by, unique))
+
 
 @composite
-def fixarray(draw, lists=lists, **kwargs):
-    _limit_size(15, _AVERAGE_ARRAY_SIZE, kwargs)
-    kwargs.setdefault("elements", all_scalar())
-    l = draw(lists(**kwargs))
+def fixarray(draw, array_contents=array_contents()):
+    l = draw(array_contents(hard_max_size=15))
     data, v = _concat_elements(l)
     return b"%c%s" % (0x90 | len(v), data), v
 
-def _do_array(draw, dtype, firstbyte, kwargs):
-    _limit_size(_num_max(dtype), _AVERAGE_ARRAY_SIZE, kwargs)
-    kwargs.setdefault("elements", all_scalar())
-    l = draw(kwargs.pop("lists", lists)(**kwargs))
-    data, v = _concat_elements(l)
+def _do_array(draw, dtype, firstbyte, array_contents=array_contents):
+    hard_max_size = _num_max(dtype)
+    l = draw(array_contents(hard_max_size=hard_max_size))
+    data, v = _concat_elements()
     return b"%c%s%s" % (firstbyte, _num_tobytes(dtype, len(v)), data), v
 
 @composite
 def array16(draw, **kwargs):
-    return _do_array(draw, ">u2", 0xdc, kwargs)
+    return _do_array(draw, ">u2", 0xdc, **kwargs)
 
 @composite
 def array32(draw, **kwargs):
-    return _do_array(draw, ">u4", 0xdd, kwargs)
+    return _do_array(draw, ">u4", 0xdd, **kwargs)
 
 @composite
 def all_array(draw, **kwargs):
@@ -267,43 +293,43 @@ class KeyWrapper(collections.namedtuple('_KeyWrapper', 'packed v')):
     def __hash__(self):
         return hash(self.v)
 
-def _wrap_key(k):
-    v, packed = k
-    return _KeyWrapper(v, packed)
-
-def _hashable(k):
-    try: hash(k)
-    except TypeError:
-        return False
-    else:
-        return True
-
 def _concat_items(d):
     packed_items, items = _concat_elements(
             (packed_key + packed_val, (key, val))
                 for (packed_key, key), (packed_val, val) in d.items())
     return packed_items, dict(items)
 
-def _prepare_keys(kwargs):
-    keys = kwargs.setdefault("keys", all_scalar())
-    kwargs["keys"] = keys.filter(_hashable).map(_wrap_key)
+AVERAGE_MAP_SIZE = 3
 
-_AVERAGE_MAP_SIZE = 3
+@PartialStrategy
+@composite
+def map_contents(  # arglist kept in sync with on hypothesis.strategies.dictionaries
+        draw,
+        keys=all_scalar(),
+        values=all_scalar(),
+        dict_class=collections.OrderedDict,
+        min_size=None,
+        average_size=None,
+        max_size=None,
+        *,
+        hard_max_size=None,
+        ):
+    assert hard_max_size is not None
+    if max_size is None or max_size > hard_max_size:
+        max_size = hard_max_size
+    if average_size is None:
+        average_size = AVERAGE_MAP_SIZE
+    return draw(dictionaries(keys.map(_KeyWrapper), values, dict_class, min_size, average_size, max_size))
 
 @composite
-def fixmap(draw, dictionaries=dictionaries, **kwargs):
-    _limit_size(15, _AVERAGE_MAP_SIZE, kwargs)
-    _prepare_keys(kwargs)
-    kwargs.setdefault("values", all_scalar)
-    d = draw(dictionaries(**kwargs))
+def fixmap(draw, map_contents=map_contents()):
+    d = draw(map_contents(hard_max_size=15))
     data, v = _concat_items(d)
     return b"%c%s" % (0x80 | len(v), data), v
 
 def _do_map(draw, dtype, firstbyte, kwargs):
-    _limit_size(_num_max(dtype), _AVERAGE_MAP_SIZE, kwargs)
-    _prepare_keys(kwargs)
-    kwargs.setdefault("values", all_scalar)
-    d = draw(kwargs.pop("dictionaries", dictionaries)(**kwargs))
+    hard_max_size = _num_max(dtype)
+    d = draw(map_contents(hard_max_size=hard_max_size))
     data, v = _concat_items(d)
     return b"%c%s%s" % (firstbyte, _num_tobytes(dtype, len(v)), data), v
 
@@ -320,7 +346,7 @@ def all_map(draw, **kwargs):
 
 @composite
 def everything(draw):
-    return draw(recursive(all_scalar(), lambda S: all_array(elements=S) | all_map(values=S)))
+    return draw(recursive(all_scalar(), lambda S: all_array(array_contents(elements=S)) | all_map(map_contents(values=S))))
 
 
 _msg_types = 'request', 'response', 'notification'
@@ -339,4 +365,4 @@ def msg(draw, types=_msg_types, msg_id=uint32(), method=all_str(), params=all_ar
         payload_tail = method, params
     else:
         raise ValueError("Invalid message type", t)
-    return draw(fixarray(lists=lambda **kwargs: tuples(just((packed_t, t)), *payload_tail)))
+    return draw(fixarray(tuples(just((packed_t, t)), *payload_tail)))
