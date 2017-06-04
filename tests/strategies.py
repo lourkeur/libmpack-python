@@ -136,8 +136,8 @@ def _limit_size(
             max_size = hard_max_size
         if min_size is not None and min_size > max_size:
             min_size = max_size
-    if (min_size is not None and average_size is not None
-        and not min_size <= average_size <= max_size):
+    if (average_size is not None
+        and not (min_size or 0) <= average_size <= max_size):
         # Our logic broke the average_size invariant.
         # Fix silently so we're more robust.
         average_size = None
@@ -185,6 +185,7 @@ def _do_bin(draw, dtype, firstbyte, payloads, prepack=lambda v: v):
         payloads = payloads(hard_max_size=hard_max_size)
     v = draw(payloads)
     data = prepack(v)
+    assume(len(data) <= hard_max_size)
     return bfmt(b"%c%s%s", firstbyte, _num_tobytes(dtype, len(data)), data), v
 
 @composite
@@ -210,7 +211,7 @@ def payloads_text(  # arglist kept in sync with hypothesis.strategies.text
         draw,
         alphabet=None,
         min_size=None,
-        average_size=AVERAGE_BIN_SIZE,
+        average_size=None,
         max_size=None,
         hard_max_size=None,
         ):
