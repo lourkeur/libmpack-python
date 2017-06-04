@@ -115,7 +115,7 @@ def all_float(draw):
 
 
 def _limit_size(
-        min_size, average_size, max_size, *,  # user controlled
+        min_size, average_size, max_size,  # user controlled
         hard_max_size=None, hard_size=None, default_average_size=None,  # strategy controlled
         ):
     if min_size is not None and max_size is not None and min_size > max_size:
