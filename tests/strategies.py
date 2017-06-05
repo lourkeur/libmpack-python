@@ -16,24 +16,39 @@ import re
 from .compat import bfmt, callable
 
 
+class Pair(collections.namedtuple('Pair', 'packed orig')):
+    def __eq__(self, other):
+        if not isinstance(other, Pair):
+            return NotImplemented
+        return self.orig.__eq__(other.orig)
+
+    def __ne__(self, other):
+        if not isinstance(other, Pair):
+            return NotImplemented
+        return self.orig.__ne__(other.orig)
+
+    def __hash__(self):
+        return hash(self.orig)
+
+
 @composite
 def nil(draw):
-    return b"\xc0", None
+    return Pair(b"\xc0", None)
 
 @composite
 def boolean(draw, values=booleans()):
     v = draw(values)
-    return bfmt(b"%c", 0xc2 + v), bool(v)
+    return Pair(bfmt(b"%c", 0xc2 + v), bool(v))
 
 @composite
 def positive_fixnum(draw, values=integers(0, 127), prepack=lambda v: v):
     v = draw(values)
-    return bfmt(b"%c", prepack(v)), v
+    return Pair(bfmt(b"%c", prepack(v)), v)
 
 @composite
 def negative_fixnum(draw, values=integers(-32, -1)):
     v = draw(values)
-    return bfmt(b"%c", 0xe0 | 256 + v), numpy.int8(v)
+    return Pair(bfmt(b"%c", 0xe0 | 256 + v), v)
 
 def _num_tobytes(dtype, v):
     return numpy.array(v, dtype).tobytes()
@@ -43,7 +58,7 @@ def _num_max(dtype):
 
 def _do_num(draw, dtype, firstbyte, postpack=lambda v: v):
     v = draw(arrays(dtype, ()))
-    return bfmt(b"%c%s", firstbyte, _num_tobytes(dtype, v)), postpack(v)
+    return Pair(bfmt(b"%c%s", firstbyte, _num_tobytes(dtype, v)), postpack(v))
 
 @composite
 def uint8(draw):
@@ -144,7 +159,7 @@ def _limit_size(
     return min_size, average_size, max_size
 
 
-class _CurriedStrategy:
+class CurriedStrategy:
     def __init__(self, *args, **kwargs):
         self.wrapped = functools.partial(*args, **kwargs)
 
@@ -154,14 +169,14 @@ class _CurriedStrategy:
     def __str__(self):
         return re.sub(r"(?<=\()[^(]*(?=\)$)", lambda m: m[0] + ', ...' if m[0] else '...', self.wrapped().__str__())
 
-def _curried_strategy(f):
-    return functools.partial(_CurriedStrategy, f)
+def curried_strategy(f):
+    return functools.partial(CurriedStrategy, f)
 
 
 # general tweak to avoid Hypothesis buffer overruns.
 AVERAGE_BIN_SIZE = 20
 
-@_curried_strategy
+@curried_strategy
 @composite
 def payloads(  # arglist kept in sync with hypothesis.strategies.binary
         draw,
@@ -186,7 +201,7 @@ def _do_bin(draw, dtype, firstbyte, payloads, prepack=lambda v: v):
     v = draw(payloads)
     data = prepack(v)
     assume(len(data) <= hard_max_size)
-    return bfmt(b"%c%s%s", firstbyte, _num_tobytes(dtype, len(data)), data), v
+    return Pair(bfmt(b"%c%s%s", firstbyte, _num_tobytes(dtype, len(data)), data), v)
 
 @composite
 def bin8(draw, payloads=payloads()):
@@ -205,7 +220,7 @@ def all_bin(draw, *args, **kwargs):
 
 AVERAGE_TEXT_SIZE = AVERAGE_BIN_SIZE
 
-@_curried_strategy
+@curried_strategy
 @composite
 def payloads_text(  # arglist kept in sync with hypothesis.strategies.text
         draw,
@@ -229,7 +244,7 @@ def fixstr(draw, payloads_text=payloads_text()):
     v = draw(payloads_text)
     data = v.encode("utf-8")
     assume(len(data) <= 31)
-    return bfmt(b"%c%s", 0xa0 | len(data), data), v
+    return Pair(bfmt(b"%c%s", 0xa0 | len(data), data), v)
 
 def _str_prepack(v):
     return v.encode("utf-8")
@@ -284,7 +299,7 @@ def _do_fixext(draw, size, firstbyte, extcodes, payloads):
         payloads = payloads(hard_size=size)
     code, data = draw(extcodes), draw(payloads)
     assume(len(data) == size)
-    return bfmt(b"%c%c%s", firstbyte, code, data), ext_unpack(code, data)
+    return Pair(bfmt(b"%c%c%s", firstbyte, code, data), ext_unpack(code, data))
 
 @composite
 def fixext1(draw, extcodes=_default_extcodes, payloads=payloads()):
@@ -318,7 +333,7 @@ def _do_ext(draw, dtype, firstbyte, extcodes, payloads):
         payloads = payloads(hard_max_size=hard_max_size)
     code, data = draw(extcodes), draw(payloads)
     assume(len(data) <= hard_max_size)
-    return bfmt(b'%c%s%c%s', firstbyte, _num_tobytes(dtype, len(data)), code, data), ext_unpack(code, data)
+    return Pair(bfmt(b'%c%s%c%s', firstbyte, _num_tobytes(dtype, len(data)), code, data), ext_unpack(code, data))
 
 @composite
 def all_ext(draw, *args, **kwargs):
@@ -339,7 +354,7 @@ def _concat_elements(l):
 
 AVERAGE_ARRAY_SIZE = 6
 
-@_curried_strategy
+@curried_strategy
 @composite
 def array_contents(  # arglist kept in sync with on hypothesis.strategies.list
         draw,
@@ -366,7 +381,7 @@ def fixarray(draw, array_contents=array_contents()):
     l = draw(array_contents)
     assume(len(l) <= 15)
     data, v = _concat_elements(l)
-    return bfmt(b"%c%s", 0x90 | len(v), data), v
+    return Pair(bfmt(b"%c%s", 0x90 | len(v), data), v)
 
 def _do_array(draw, dtype, firstbyte, array_contents):
     hard_max_size = _num_max(dtype)
@@ -375,7 +390,7 @@ def _do_array(draw, dtype, firstbyte, array_contents):
     l = draw(array_contents)
     assume(len(l) <= hard_max_size)
     data, v = _concat_elements(l)
-    return bfmt(b"%c%s%s", firstbyte, _num_tobytes(dtype, len(v)), data), v
+    return Pair(bfmt(b"%c%s%s", firstbyte, _num_tobytes(dtype, len(v)), data), v)
 
 @composite
 def array16(draw, array_contents=array_contents()):
@@ -389,28 +404,13 @@ def array32(draw, array_contents=array_contents()):
 def all_array(draw, *args, **kwargs):
     return draw(one_of(a(*args, **kwargs) for a in (fixarray, array16, array32)))
 
-
-class KeyWrapper(collections.namedtuple('KeyWrapper', 'packed v')):
-    def __eq__(self, other):
-        if not isinstance(other, KeyWrapper):
-            return NotImplemented
-        return self.v == other.v
-
-    def __ne__(self, other):
-        if not isinstance(other, KeyWrapper):
-            return NotImplemented
-        return self.v != other.v
-
-    def __hash__(self):
-        return hash(self.v)
-
 def _concat_items(d):
-    data, v = _concat_elements((k[0] + v[0], (k[1], v[1])) for k, v in d.items())
+    data, v = _concat_elements(Pair(k[0] + v[0], (k[1], v[1])) for k, v in d.items())
     return data, type(d)(v)
 
 AVERAGE_MAP_SIZE = 3
 
-@_curried_strategy
+@curried_strategy
 @composite
 def map_contents(  # arglist kept in sync with on hypothesis.strategies.dictionaries
         draw,
@@ -427,7 +427,7 @@ def map_contents(  # arglist kept in sync with on hypothesis.strategies.dictiona
             hard_max_size=hard_max_size,
             default_average_size=AVERAGE_MAP_SIZE,
             )
-    return draw(dictionaries(keys.map(lambda k: KeyWrapper(*k)), values, dict_class, *sizes))
+    return draw(dictionaries(keys, values, dict_class, *sizes))
 
 @composite
 def fixmap(draw, map_contents=map_contents()):
@@ -436,7 +436,7 @@ def fixmap(draw, map_contents=map_contents()):
     d = draw(map_contents)
     assume(len(d) <= 15)
     data, v = _concat_items(d)
-    return bfmt(b"%c%s", 0x80 | len(v), data), v
+    return Pair(bfmt(b"%c%s", 0x80 | len(v), data), v)
 
 def _do_map(draw, dtype, firstbyte, map_contents):
     hard_max_size = _num_max(dtype)
@@ -445,7 +445,7 @@ def _do_map(draw, dtype, firstbyte, map_contents):
     d = draw(map_contents)
     assume(len(d) <= hard_max_size)
     data, v = _concat_items(d)
-    return bfmt(b"%c%s%s", firstbyte, _num_tobytes(dtype, len(v)), data), v
+    return Pair(bfmt(b"%c%s%s", firstbyte, _num_tobytes(dtype, len(v)), data), v)
 
 @composite
 def map16(draw, map_contents=map_contents()):
