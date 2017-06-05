@@ -26,12 +26,12 @@ def boolean(draw, values=booleans()):
     return bfmt(b"%c", 0xc2 + v), bool(v)
 
 @composite
-def positive_fixnum(draw, values=integers(0, 127).map(numpy.int8), prepack=lambda v: v):
+def positive_fixnum(draw, values=integers(0, 127), prepack=lambda v: v):
     v = draw(values)
     return bfmt(b"%c", prepack(v)), v
 
 @composite
-def negative_fixnum(draw, values=integers(-32, -1).map(numpy.int8)):
+def negative_fixnum(draw, values=integers(-32, -1)):
     v = draw(values)
     return bfmt(b"%c", 0xe0 | 256 + v), numpy.int8(v)
 
