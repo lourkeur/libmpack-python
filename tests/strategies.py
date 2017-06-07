@@ -17,15 +17,12 @@ from .compat import bfmt, callable
 
 
 class Pair(collections.namedtuple('Pair', 'packed orig')):
+    "Compares and hashes based on its original value."
     def __eq__(self, other):
-        if not isinstance(other, Pair):
-            return NotImplemented
-        return self.orig.__eq__(other.orig)
+        return self.orig.__eq__(other.orig if isinstance(other, Pair) else other)
 
     def __ne__(self, other):
-        if not isinstance(other, Pair):
-            return NotImplemented
-        return self.orig.__ne__(other.orig)
+        return self.orig.__ne__(other.orig if isinstance(other, Pair) else other)
 
     def __hash__(self):
         return hash(self.orig)
@@ -159,7 +156,7 @@ def _limit_size(
     return min_size, average_size, max_size
 
 
-class CurriedStrategy:
+class CurriedStrategy(object):
     def __init__(self, *args, **kwargs):
         self.wrapped = functools.partial(*args, **kwargs)
 
@@ -348,8 +345,8 @@ def all_scalar(draw, boolean=boolean(), positive_fixnum=positive_fixnum(), negat
 def _concat_elements(l):
     acc1, acc2 = bytearray(), []
     for el in l:
-        acc1 += el[0]
-        acc2.append(el[1])
+        acc1 += el.packed
+        acc2.append(el.orig)
     return bytes(acc1), acc2
 
 AVERAGE_ARRAY_SIZE = 6
@@ -405,7 +402,7 @@ def all_array(draw, *args, **kwargs):
     return draw(one_of(a(*args, **kwargs) for a in (fixarray, array16, array32)))
 
 def _concat_items(d):
-    data, v = _concat_elements(Pair(k[0] + v[0], (k[1], v[1])) for k, v in d.items())
+    data, v = _concat_elements(Pair(k.packed + v.packed, (k.orig, v.orig)) for k, v in d.items())
     return data, type(d)(v)
 
 AVERAGE_MAP_SIZE = 3
@@ -467,20 +464,27 @@ def everything(draw):
             max_leaves=4))
 
 
-_msg_types = 'request', 'response', 'notification'
+MSG_TYPES = 'request', 'response', 'notification'
+@composite
+def msg_types(draw, values=sampled_from(MSG_TYPES)):
+    return draw(positive_fixnum(values, prepack=lambda t: MSG_TYPES.index(t)))
 
 @composite
-def msg(draw, types=_msg_types, msg_id=uint32(), method=all_str(), params=all_array(array_contents(everything())), has_error=booleans(), errors=everything(), results=everything()):
-    packed_t, t = draw(positive_fixnum(values=sampled_from(types), prepack=lambda t: _msg_types.index(t)))
+def msg_contents(draw, types=msg_types(), msgids=uint32(), methods=all_str(), params=all_array(array_contents(everything())), has_error=booleans(), errors=everything(), results=everything()):
+    t = draw(types)
     if t == 'request':
-        contents_tail = msg_id, method, params
+        tail = msgids, methods, params
     elif t == 'response':
         if draw(has_error):
-            contents_tail = msg_id, errors, nil()
+            tail = msgids, errors, nil()
         else:
-            contents_tail = msg_id, nil(), results
+            tail = msgids, nil(), results
     elif t == 'notification':
-        contents_tail = method, params
+        tail = methods, params
     else:
         raise ValueError("Invalid message type", t)
-    return draw(fixarray(tuples(just((packed_t, t)), *contents_tail)))
+    return draw(tuples(just(t), *tail))
+
+@composite
+def msg(draw, msg_contents=msg_contents()):
+    return draw(fixarray(msg_contents))

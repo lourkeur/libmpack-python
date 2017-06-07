@@ -3,7 +3,7 @@ import unittest
 
 import mpack
 
-from . import compat, strategies
+from . import compat, strategies, statemachines
 
 
 class TestMpack(unittest.TestCase, compat.SubTestMixin):
@@ -24,14 +24,6 @@ class TestMpack(unittest.TestCase, compat.SubTestMixin):
                 self.assertEqual(n, len(packed_obj))
                 self.assertEqual(unpacked_obj, obj)
 
-    @given(strategies.msg(types=('request',)))
-    def test_unpack_request(self, x):
-        # TODO: rules based stateful testing
-        packed_msg, msg = x
-        msg_type, msg_id, method, params = msg
-        s = mpack.Session()
-        self.assertEqual(s.receive(packed_msg), (len(packed_msg), msg_type, method, params, msg_id))
-
     def test_unpacking_c1(self):
         unpack = mpack.Unpacker()
         with self.assertRaises(mpack.MpackException):
@@ -45,6 +37,8 @@ class TestMpack(unittest.TestCase, compat.SubTestMixin):
     def test_unpacking_with_ext_dict(self):
         unpack = mpack.Unpacker(ext={})
         self.assertEqual(unpack(b"\xc0"), (None, 1))
+
+TestMpackRPC = statemachines.RPCSession.TestCase
 
 
 if __name__ == '__main__':
